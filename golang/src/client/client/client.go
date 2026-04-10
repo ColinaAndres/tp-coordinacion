@@ -92,6 +92,18 @@ func (client *Client) handleSignals() {
 	client.conn.Close()
 }
 
+func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
+	msgType, err := external.ReadMsgType(client.conn)
+	if err != nil {
+		slog.Debug("Error while reading message type", "err", err)
+		return err
+	}
+	if msgType != expectedMsgType {
+		return errors.New("Unexpected message type")
+	}
+	return nil
+}
+
 func (client *Client) sendFruitRecords() error {
 	file, err := os.Open(client.config.InputFile)
 	if err != nil {
@@ -115,39 +127,24 @@ func (client *Client) sendFruitRecords() error {
 			return err
 		}
 
-		msgType, err := external.ReadMsgType(client.conn)
-		if err != nil {
-			slog.Debug("Error while reading ack message", "err", err)
+		if err := client.expectMsgType(external.Ack); err != nil {
 			return err
-		}
-		if msgType != external.Ack {
-			return errors.New("Expected Ack message")
 		}
 	}
 
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Debug("Error while reading ack message", "err", err)
+	if err := client.expectMsgType(external.Ack); err != nil {
 		return err
-	}
-	if msgType != external.Ack {
-		return errors.New("Expected Ack message")
 	}
 
 	return nil
 }
 
 func (client *Client) recvFruitTop() error {
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Debug("Error while reading message type", "err", err)
+	if err := client.expectMsgType(external.FruitTop); err != nil {
 		return err
-	}
-	if msgType != external.FruitTop {
-		return errors.New("Expected FruitTop message")
 	}
 
 	fruitTop, err := external.ReadFruitTop(client.conn)
