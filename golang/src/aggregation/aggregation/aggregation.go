@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
@@ -25,7 +26,7 @@ type AggregationConfig struct {
 type Aggregation struct {
 	outputQueue   middleware.Middleware
 	inputExchange middleware.Middleware
-	fruitItemMap  map[string]map[string]fruititem.FruitItem
+	accumulator   *accumulator.Accumulator
 	topSize       int
 }
 
@@ -47,7 +48,7 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 	return &Aggregation{
 		outputQueue:   outputQueue,
 		inputExchange: inputExchange,
-		fruitItemMap:  map[string]map[string]fruititem.FruitItem{},
+		accumulator:   accumulator.NewAccumulator(),
 		topSize:       config.TopSize,
 	}, nil
 }
@@ -105,31 +106,17 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string) error
 		return err
 	}
 
-	delete(aggregation.fruitItemMap, clientId)
+	aggregation.accumulator.RemoveClientFruitItems(clientId)
 	return nil
 }
 
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
-	if _, ok := aggregation.fruitItemMap[clientId]; !ok {
-		aggregation.fruitItemMap[clientId] = map[string]fruititem.FruitItem{}
-	}
-
-	clientMap := aggregation.fruitItemMap[clientId]
-	for _, fruitRecord := range fruitRecords {
-		if _, ok := clientMap[fruitRecord.Fruit]; ok {
-			clientMap[fruitRecord.Fruit] = clientMap[fruitRecord.Fruit].Sum(fruitRecord)
-		} else {
-			clientMap[fruitRecord.Fruit] = fruitRecord
-		}
-	}
+	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
-	clientMap := aggregation.fruitItemMap[clientId]
-	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
-	for _, item := range clientMap {
-		fruitItems = append(fruitItems, item)
-	}
+	// TODO: podria devolver nil y false si no existe el cliente, revisar si es necesario
+	fruitItems, _ := aggregation.accumulator.GetClientFruitItems(clientId)
 	sort.SliceStable(fruitItems, func(i, j int) bool {
 		return fruitItems[j].Less(fruitItems[i])
 	})
