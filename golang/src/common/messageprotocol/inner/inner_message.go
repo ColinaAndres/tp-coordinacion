@@ -7,13 +7,13 @@ import (
 type InnerMessage struct {
 	ClientId     string
 	FruitRecords []fruititem.FruitItem
-	isEOF        bool
+	IsEOF        bool
 }
 
 func NewInnerMessage(clientId string, fruitRecords []fruititem.FruitItem, isEOF bool) InnerMessage {
 	return InnerMessage{
 		ClientId:     clientId,
 		FruitRecords: fruitRecords,
-		isEOF:        isEOF,
+		IsEOF:        isEOF,
 	}
 }
