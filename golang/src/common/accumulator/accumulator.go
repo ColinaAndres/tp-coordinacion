@@ -14,6 +14,9 @@ func NewAccumulator() *Accumulator {
 	}
 }
 
+// Agrega los registros de un cliente al acumulador,
+// sumando los registros de frutas repetidos, si no existia la
+// entrada la crea.
 func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fruititem.FruitItem) error {
 	if _, ok := accumulator.clientMaps[clientId]; !ok {
 		accumulator.clientMaps[clientId] = map[string]fruititem.FruitItem{}
@@ -32,6 +35,8 @@ func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fr
 	return nil
 }
 
+// Elimina los registros de un cliente y devuelve la lista de items eliminados.
+// Devuelve false si el cliente no existía
 func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
 	clientMap, ok := accumulator.clientMaps[clientId]
 	if !ok {
