@@ -51,3 +51,19 @@ func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruit
 	delete(accumulator.clientMaps, clientId)
 	return fruitItems, true
 }
+
+// Devuelve la lista de items acumulados para un cliente sin eliminar los registros del acumulador.
+// Devuelve false si el cliente no existía
+func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
+	clientMap, ok := accumulator.clientMaps[clientId]
+	if !ok {
+		return nil, false
+	}
+
+	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
+	for _, item := range clientMap {
+		fruitItems = append(fruitItems, item)
+	}
+
+	return fruitItems, true
+}
