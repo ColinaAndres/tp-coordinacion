@@ -22,9 +22,10 @@ type SumConfig struct {
 }
 
 type Sum struct {
-	inputQueue     middleware.Middleware
-	outputExchange middleware.Middleware
-	accumulator    *accumulator.Accumulator
+	inputQueue            middleware.Middleware
+	outputExchange        middleware.Middleware
+	communicationExchange middleware.Middleware
+	accumulator           *accumulator.Accumulator
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -46,10 +47,26 @@ func NewSum(config SumConfig) (*Sum, error) {
 		return nil, err
 	}
 
+	communicationExchangeRouteKeys := make([]string, config.SumAmount)
+	for i := range config.SumAmount {
+		if i == config.Id {
+			continue
+		}
+		communicationExchangeRouteKeys[i] = fmt.Sprintf("%s_%d", config.SumPrefix, i)
+	}
+
+	communicationExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationExchangeRouteKeys, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		outputExchange.Close()
+		return nil, err
+	}
+
 	return &Sum{
-		inputQueue:     inputQueue,
-		outputExchange: outputExchange,
-		accumulator:    accumulator.NewAccumulator(),
+		inputQueue:            inputQueue,
+		outputExchange:        outputExchange,
+		communicationExchange: communicationExchange,
+		accumulator:           accumulator.NewAccumulator(),
 	}, nil
 }
 
