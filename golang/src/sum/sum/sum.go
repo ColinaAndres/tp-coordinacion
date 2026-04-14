@@ -87,8 +87,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
 	slog.Info("Received End Of Records message")
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
-	//TODO: Posible error borrar los datos si aun no los envie.
-	fruitItems, _ := sum.accumulator.RemoveClientFruitItems(clientId)
+	fruitItems, _ := sum.accumulator.GetClientFruitItems(clientId)
 	for _, fruitItem := range fruitItems {
 		fruitRecord := []fruititem.FruitItem{fruitItem}
 		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
@@ -113,6 +112,8 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
 		slog.Debug("While sending EOF message", "err", err)
 		return err
 	}
+
+	sum.accumulator.RemoveClientFruitItems(clientId)
 	return nil
 }
 
