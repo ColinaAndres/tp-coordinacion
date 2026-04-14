@@ -91,6 +91,10 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 			slog.Error("While handling end of record message", "err", err)
 			nack()
 		}
+		if err := sum.notifyEOF(innerMessage.ClientId); err != nil {
+			slog.Error("While notifying EOF to other sum nodes", "err", err)
+			nack()
+		}
 		return
 	}
 
@@ -158,5 +162,20 @@ func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack 
 	}
 
 	sum.handleEndOfRecordMessage(innerMessage.ClientId)
+	return nil
+}
+
+func (sum *Sum) notifyEOF(clientId string) error {
+	slog.Info("Notifying other sum nodes about EOF")
+	eofMessage := inner.NewInnerMessage(clientId, []fruititem.FruitItem{}, true)
+	message, err := inner.SerializeMessage(eofMessage)
+	if err != nil {
+		slog.Debug("While serializing EOF message", "err", err)
+		return err
+	}
+	if err := sum.communicationExchange.Send(*message); err != nil {
+		slog.Debug("While sending EOF message", "err", err)
+		return err
+	}
 	return nil
 }
