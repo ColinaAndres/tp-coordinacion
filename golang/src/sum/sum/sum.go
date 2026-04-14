@@ -71,6 +71,10 @@ func NewSum(config SumConfig) (*Sum, error) {
 }
 
 func (sum *Sum) Run() {
+	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		sum.handleSumCommunication(msg, ack, nack)
+	})
+
 	sum.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		sum.handleMessage(msg, ack, nack)
 	})
@@ -145,24 +149,26 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	return nil
 }
 
-func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack func()) error {
+func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack func()) {
 	slog.Info("Received message from another sum node")
 	defer ack()
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
 		nack()
-		return err
+		return
 	}
 
 	if !innerMessage.IsEOF {
 		slog.Error("Received non EOF message in sum communication exchange")
 		//TODO: Deberia nackear el mensaje? O simplemente ignorarlo? deberia devolver error?
-		return nil
+		return
 	}
 
-	sum.handleEndOfRecordMessage(innerMessage.ClientId)
-	return nil
+	if err := sum.handleEndOfRecordMessage(innerMessage.ClientId); err != nil {
+		slog.Error("While handling end of record message", "err", err)
+		nack()
+	}
 }
 
 func (sum *Sum) notifyEOF(clientId string) error {
