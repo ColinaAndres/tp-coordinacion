@@ -6,7 +6,7 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
 
 	"fmt"
-	"rand"
+	"math/rand"
 	"time"
 )
 
