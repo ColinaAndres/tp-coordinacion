@@ -64,18 +64,21 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	fruitRecords, isEof, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
+		nack()
 		return
 	}
 
 	if isEof {
 		if err := sum.handleEndOfRecordMessage(); err != nil {
 			slog.Error("While handling end of record message", "err", err)
+			nack()
 		}
 		return
 	}
 
 	if err := sum.handleDataMessage(fruitRecords); err != nil {
 		slog.Error("While handling data message", "err", err)
+		nack()
 	}
 }
 
