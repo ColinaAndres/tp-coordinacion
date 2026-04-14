@@ -140,3 +140,23 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	}
 	return nil
 }
+
+func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack func()) error {
+	slog.Info("Received message from another sum node")
+	defer ack()
+	innerMessage, err := inner.DeserializeMessage(&msg)
+	if err != nil {
+		slog.Error("While deserializing message", "err", err)
+		nack()
+		return err
+	}
+
+	if !innerMessage.IsEOF {
+		slog.Error("Received non EOF message in sum communication exchange")
+		//TODO: Deberia nackear el mensaje? O simplemente ignorarlo? deberia devolver error?
+		return nil
+	}
+
+	sum.handleEndOfRecordMessage(innerMessage.ClientId)
+	return nil
+}
