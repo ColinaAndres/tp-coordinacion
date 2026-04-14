@@ -64,12 +64,14 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 	fruitRecords, isEof, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
+		nack()
 		return
 	}
 
 	if isEof {
 		if err := aggregation.handleEndOfRecordsMessage(); err != nil {
 			slog.Error("While handling end of record message", "err", err)
+			nack()
 		}
 		return
 	}
