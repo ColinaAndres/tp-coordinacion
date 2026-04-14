@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
@@ -23,7 +24,7 @@ type SumConfig struct {
 type Sum struct {
 	inputQueue     middleware.Middleware
 	outputExchange middleware.Middleware
-	fruitItemMap   map[string]map[string]fruititem.FruitItem
+	accumulator    *accumulator.Accumulator
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -48,7 +49,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 	return &Sum{
 		inputQueue:     inputQueue,
 		outputExchange: outputExchange,
-		fruitItemMap:   map[string]map[string]fruititem.FruitItem{},
+		accumulator:    accumulator.NewAccumulator(),
 	}, nil
 }
 
@@ -86,9 +87,10 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
 	slog.Info("Received End Of Records message")
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
-	clientMap, _ := sum.fruitItemMap[clientId]
-	for _, value := range clientMap {
-		fruitRecord := []fruititem.FruitItem{value}
+	//TODO: Posible error borrar los datos si aun no los envie.
+	fruitItems, _ := sum.accumulator.RemoveClientFruitItems(clientId)
+	for _, fruitItem := range fruitItems {
+		fruitRecord := []fruititem.FruitItem{fruitItem}
 		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
 		message, err := inner.SerializeMessage(innerMessage)
 		if err != nil {
@@ -111,25 +113,12 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
 		slog.Debug("While sending EOF message", "err", err)
 		return err
 	}
-
-	delete(sum.fruitItemMap, clientId)
 	return nil
 }
 
 func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
-	if _, ok := sum.fruitItemMap[clientId]; !ok {
-		sum.fruitItemMap[clientId] = map[string]fruititem.FruitItem{}
-	}
-
-	clientMap := sum.fruitItemMap[clientId]
-
-	for _, fruitRecord := range fruitRecords {
-		_, ok := clientMap[fruitRecord.Fruit]
-		if ok {
-			clientMap[fruitRecord.Fruit] = clientMap[fruitRecord.Fruit].Sum(fruitRecord)
-		} else {
-			clientMap[fruitRecord.Fruit] = fruitRecord
-		}
+	if err := sum.accumulator.AddFruitItems(clientId, fruitRecords); err != nil {
+		return err
 	}
 	return nil
 }
