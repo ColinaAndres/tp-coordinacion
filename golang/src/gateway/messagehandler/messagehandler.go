@@ -5,7 +5,9 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
 
-	uuid "github.com/google/go.uuid"
+	"fmt"
+	"rand"
+	"time"
 )
 
 type MessageHandler struct {
@@ -33,6 +35,9 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 	return fruitRecords, nil
 }
 
+// Crea un ID tipo timestamp con cierto desfase para evitar colisiones entre clientes
 func createMessageID() string {
-	return uuid.New().String()
+	now := time.Now().UnixNano()
+	randomPart := rand.Intn(10000)
+	return fmt.Sprintf("%d-%d", now, randomPart)
 }
