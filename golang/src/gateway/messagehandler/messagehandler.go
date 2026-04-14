@@ -11,10 +11,11 @@ import (
 )
 
 type MessageHandler struct {
+	ClientId string
 }
 
 func NewMessageHandler() MessageHandler {
-	return MessageHandler{}
+	return MessageHandler{ClientId: createClientID()}
 }
 
 func (messageHandler *MessageHandler) SerializeDataMessage(fruitRecord fruititem.FruitItem) (*middleware.Message, error) {
@@ -36,7 +37,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 }
 
 // Crea un ID tipo timestamp con cierto desfase para evitar colisiones entre clientes
-func createMessageID() string {
+func createClientID() string {
 	now := time.Now().UnixNano()
 	randomPart := rand.Intn(10000)
 	return fmt.Sprintf("%d-%d", now, randomPart)
