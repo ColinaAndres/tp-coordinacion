@@ -181,6 +181,12 @@ func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack 
 		return
 	}
 
+	if innerMessage.IsCleanUp {
+		slog.Info("Received clean up message, removing client done data")
+		sum.accumulator.CleanDoneClient(innerMessage.ClientId)
+		return
+	}
+
 	if !innerMessage.IsEOF {
 		slog.Error("Received non EOF message in sum communication exchange")
 		//TODO: Deberia nackear el mensaje? O simplemente ignorarlo? deberia devolver error?
