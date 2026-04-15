@@ -7,6 +7,7 @@ import (
 type InnerMessage struct {
 	ClientId       string
 	IsEOF          bool
+	IsCleanUp      bool
 	TotalFruitSend int
 	FruitRecords   []fruititem.FruitItem
 }
@@ -17,6 +18,7 @@ func NewInnerMessage(clientId string, fruitRecords []fruititem.FruitItem, isEOF 
 	return InnerMessage{
 		ClientId:       clientId,
 		IsEOF:          isEOF,
+		IsCleanUp:      false,
 		TotalFruitSend: len(fruitRecords),
 		FruitRecords:   fruitRecords,
 	}
