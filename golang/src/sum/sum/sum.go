@@ -91,11 +91,11 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	}
 
 	if innerMessage.IsEOF {
-		if err := sum.handleEndOfRecordMessage(innerMessage.ClientId); err != nil {
+		if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While handling end of record message", "err", err)
 			nack()
 		}
-		if err := sum.notifyEOF(innerMessage.ClientId); err != nil {
+		if err := sum.notifyEOF(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While notifying EOF to other sum nodes", "err", err)
 			nack()
 		}
@@ -108,7 +108,7 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	}
 }
 
-func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
+func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message")
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
@@ -127,7 +127,12 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string) error {
 		}
 	}
 
-	eofMessage := inner.NewInnerMessage(clientId, []fruititem.FruitItem{}, true)
+	eofMessage := inner.InnerMessage{
+		ClientId:       clientId,
+		IsEOF:          true,
+		TotalFruitSend: totalFruitSend,
+		FruitRecords:   []fruititem.FruitItem{},
+	}
 	message, err := inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)
@@ -165,15 +170,20 @@ func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack 
 		return
 	}
 
-	if err := sum.handleEndOfRecordMessage(innerMessage.ClientId); err != nil {
+	if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 		slog.Error("While handling end of record message", "err", err)
 		nack()
 	}
 }
 
-func (sum *Sum) notifyEOF(clientId string) error {
+func (sum *Sum) notifyEOF(clientId string, totalFruitSend int) error {
 	slog.Info("Notifying other sum nodes about EOF")
-	eofMessage := inner.NewInnerMessage(clientId, []fruititem.FruitItem{}, true)
+	eofMessage := inner.InnerMessage{
+		ClientId:       clientId,
+		IsEOF:          true,
+		TotalFruitSend: totalFruitSend,
+		FruitRecords:   []fruititem.FruitItem{},
+	}
 	message, err := inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)

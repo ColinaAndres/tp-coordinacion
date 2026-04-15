@@ -6,9 +6,9 @@ import (
 
 type InnerMessage struct {
 	ClientId       string
-	FruitRecords   []fruititem.FruitItem
 	IsEOF          bool
 	TotalFruitSend int
+	FruitRecords   []fruititem.FruitItem
 }
 
 // Este constructor es util para no cargar a mano el total enviado,
