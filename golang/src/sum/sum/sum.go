@@ -47,13 +47,14 @@ func NewSum(config SumConfig) (*Sum, error) {
 		return nil, err
 	}
 
-	communicationExchangeRouteKeys := make([]string, config.SumAmount)
-	for i := range config.SumAmount {
-		if i == config.Id {
-			continue
-		}
-		communicationExchangeRouteKeys[i] = fmt.Sprintf("%s_%d", config.SumPrefix, i)
-	}
+	communicationExchangeRouteKeys := []string{config.SumPrefix}
+
+	// for i := range config.SumAmount {
+	// 	if i == config.Id {
+	// 		continue
+	// 	}
+	// 	communicationExchangeRouteKeys[i] = fmt.Sprintf("%s_%d", config.SumPrefix, i)
+	// }
 
 	communicationExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationExchangeRouteKeys, connSettings)
 	if err != nil {
@@ -91,10 +92,10 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	}
 
 	if innerMessage.IsEOF {
-		if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-			slog.Error("While handling end of record message", "err", err)
-			nack()
-		}
+		// if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
+		// 	slog.Error("While handling end of record message", "err", err)
+		// 	nack()
+		// }
 		if err := sum.notifyEOF(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While notifying EOF to other sum nodes", "err", err)
 			nack()
