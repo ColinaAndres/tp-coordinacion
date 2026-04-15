@@ -26,6 +26,7 @@ type AggregationConfig struct {
 type Aggregation struct {
 	outputQueue   middleware.Middleware
 	inputExchange middleware.Middleware
+	sumExchange   middleware.Middleware
 	accumulator   *accumulator.Accumulator
 	topSize       int
 }
@@ -45,9 +46,18 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		return nil, err
 	}
 
+	sumExchangeRouteKeys := []string{config.SumPrefix}
+	sumExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, sumExchangeRouteKeys, connSettings)
+	if err != nil {
+		outputQueue.Close()
+		inputExchange.Close()
+		return nil, err
+	}
+
 	return &Aggregation{
 		outputQueue:   outputQueue,
 		inputExchange: inputExchange,
+		sumExchange:   sumExchange,
 		accumulator:   accumulator.NewAccumulator(),
 		topSize:       config.TopSize,
 	}, nil
