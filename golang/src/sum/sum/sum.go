@@ -173,7 +173,7 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 }
 
 func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack func()) {
-	slog.Info("Received message from another sum node")
+	slog.Info("Received message from communication exchange")
 	defer ack()
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
