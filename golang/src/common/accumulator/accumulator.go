@@ -1,23 +1,30 @@
 package accumulator
 
 import (
+	"sync"
+
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 )
 
 type Accumulator struct {
 	clientMaps map[string]map[string]fruititem.FruitItem
+	mutex      sync.RWMutex
 }
 
 func NewAccumulator() *Accumulator {
 	return &Accumulator{
 		clientMaps: map[string]map[string]fruititem.FruitItem{},
+		mutex:      sync.RWMutex{},
 	}
 }
 
 // Agrega los registros de un cliente al acumulador,
-// sumando los registros de frutas repetidos, si no existia la
-// entrada la crea.
+// sumando los registros de frutas repetidos, si no existia la entrada la crea.
+// Metodo thread safe
 func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fruititem.FruitItem) error {
+	accumulator.mutex.Lock()
+	defer accumulator.mutex.Unlock()
+
 	if _, ok := accumulator.clientMaps[clientId]; !ok {
 		accumulator.clientMaps[clientId] = map[string]fruititem.FruitItem{}
 	}
@@ -37,7 +44,11 @@ func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fr
 
 // Elimina los registros de un cliente y devuelve la lista de items eliminados.
 // Devuelve false si el cliente no existía
+// Metodo thread safe
 func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
+	accumulator.mutex.Lock()
+	defer accumulator.mutex.Unlock()
+
 	clientMap, ok := accumulator.clientMaps[clientId]
 	if !ok {
 		return nil, false
@@ -53,8 +64,12 @@ func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruit
 }
 
 // Devuelve la lista de items acumulados para un cliente sin eliminar los registros del acumulador.
-// Devuelve false si el cliente no existía
+// Devuelve false si el cliente no existía.
+// Metodo thread safe, se pueden realizar lecturas concurrentes.
 func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
+	accumulator.mutex.RLock()
+	defer accumulator.mutex.RUnlock()
+
 	clientMap, ok := accumulator.clientMaps[clientId]
 	if !ok {
 		return nil, false
