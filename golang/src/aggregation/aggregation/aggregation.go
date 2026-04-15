@@ -28,6 +28,8 @@ type Aggregation struct {
 	inputExchange middleware.Middleware
 	sumExchange   middleware.Middleware
 	accumulator   *accumulator.Accumulator
+	states        map[string]*QueryState
+	sumAmount     int
 	topSize       int
 }
 
@@ -59,6 +61,7 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		inputExchange: inputExchange,
 		sumExchange:   sumExchange,
 		accumulator:   accumulator.NewAccumulator(),
+		sumAmount:     config.SumAmount,
 		topSize:       config.TopSize,
 	}, nil
 }
