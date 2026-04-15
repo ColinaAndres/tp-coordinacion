@@ -154,7 +154,9 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, total
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
 	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
 	state := aggregation.getState(clientId)
-	state.ReceivedCount += int(fruitRecords[0].Amount)
+	for _, item := range fruitRecords {
+		state.ReceivedCount += int(item.Amount)
+	}
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
