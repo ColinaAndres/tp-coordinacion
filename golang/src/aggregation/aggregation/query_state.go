@@ -1,7 +1,7 @@
 package aggregation
 
 type QueryState struct {
-	ReceivedCounts int
-	TargetCounts   int
-	EOFcount       int
+	ReceivedCount int
+	TargetCounts  int
+	EOFcount      int
 }

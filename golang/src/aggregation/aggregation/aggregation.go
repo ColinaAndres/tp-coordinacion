@@ -83,7 +83,7 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 	}
 
 	if innerMessage.IsEOF {
-		if err := aggregation.handleEndOfRecordsMessage(innerMessage.ClientId); err != nil {
+		if err := aggregation.handleEndOfRecordsMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While handling end of record message", "err", err)
 			nack()
 		}
@@ -93,12 +93,39 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 	aggregation.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords)
 }
 
-func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string) error {
+func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message")
+
+	//TODO: encapsulable para quedarse con el mayor de total en caso de errores raros
+	state := aggregation.getState(clientId)
+	state.EOFcount++
+	state.TargetCounts = totalFruitSend
+
+	if !(state.EOFcount == aggregation.sumAmount && state.ReceivedCount == totalFruitSend) {
+		return nil
+	}
+
+	cleanUpMessage := inner.InnerMessage{
+		ClientId:       clientId,
+		FruitRecords:   []fruititem.FruitItem{},
+		IsEOF:          false,
+		IsCleanUp:      true,
+		TotalFruitSend: 0,
+	}
+
+	message, err := inner.SerializeMessage(cleanUpMessage)
+	if err != nil {
+		slog.Debug("While serializing clean up message", "err", err)
+		return err
+	}
+	if err := aggregation.sumExchange.Send(*message); err != nil {
+		slog.Debug("While sending clean up message", "err", err)
+		return err
+	}
 
 	fruitTopRecords := aggregation.buildFruitTop(clientId)
 	innerMessageWithTop := inner.NewInnerMessage(clientId, fruitTopRecords, false)
-	message, err := inner.SerializeMessage(innerMessageWithTop)
+	message, err = inner.SerializeMessage(innerMessageWithTop)
 	if err != nil {
 		slog.Debug("While serializing top message", "err", err)
 		return err
@@ -125,6 +152,8 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string) error
 
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
 	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
+	state := aggregation.getState(clientId)
+	state.ReceivedCount += len(fruitRecords)
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
@@ -135,4 +164,13 @@ func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.Fruit
 	})
 	finalTopSize := min(aggregation.topSize, len(fruitItems))
 	return fruitItems[:finalTopSize]
+}
+
+func (aggregation *Aggregation) getState(clientId string) *QueryState {
+	state, exists := aggregation.states[clientId]
+	if !exists {
+		state = &QueryState{}
+		aggregation.states[clientId] = state
+	}
+	return state
 }
