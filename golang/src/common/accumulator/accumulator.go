@@ -95,11 +95,8 @@ func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruitite
 // Limpia la lista de clientes que ya enviaron EOF, se puede usar para liberar memoria
 // si se sabe que no van a volver a enviar registros
 // Metodo thread safe
-func (accumulator *Accumulator) CleanDoneClients() {
+func (accumulator *Accumulator) CleanDoneClient(clientId string) {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()
-
-	for clientId := range accumulator.doneClients {
-		delete(accumulator.doneClients, clientId)
-	}
+	delete(accumulator.doneClients, clientId)
 }
