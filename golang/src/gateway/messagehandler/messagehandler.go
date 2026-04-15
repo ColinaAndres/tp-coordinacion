@@ -10,23 +10,45 @@ import (
 	"time"
 )
 
+const (
+	defaultSerializedAmount = 0
+)
+
 type MessageHandler struct {
-	ClientId string
+	clientId        string
+	fruitSerialized int
 }
 
 func NewMessageHandler() MessageHandler {
-	return MessageHandler{ClientId: createClientID()}
+	return MessageHandler{clientId: createClientID()}
 }
 
 func (messageHandler *MessageHandler) SerializeDataMessage(fruitRecord fruititem.FruitItem) (*middleware.Message, error) {
 	data := []fruititem.FruitItem{fruitRecord}
-	innerMessage := inner.NewInnerMessage(messageHandler.ClientId, data, false)
-	return inner.SerializeMessage(innerMessage)
+	innerMessage := inner.NewInnerMessage(messageHandler.clientId, data, false)
+	msg, err := inner.SerializeMessage(innerMessage)
+	if err != nil {
+		return nil, err
+	}
+	messageHandler.fruitSerialized++
+	return msg, nil
 }
 
 func (messageHandler *MessageHandler) SerializeEOFMessage() (*middleware.Message, error) {
-	innerMessage := inner.NewInnerMessage(messageHandler.ClientId, []fruititem.FruitItem{}, true)
-	return inner.SerializeMessage(innerMessage)
+	innerMessage := inner.InnerMessage{
+		ClientId:       messageHandler.clientId,
+		IsEOF:          true,
+		TotalFruitSend: messageHandler.fruitSerialized,
+		FruitRecords:   []fruititem.FruitItem{},
+	}
+
+	msg, err := inner.SerializeMessage(innerMessage)
+	if err != nil {
+		return nil, err
+	}
+
+	messageHandler.fruitSerialized = defaultSerializedAmount
+	return msg, nil
 }
 
 func (messageHandler *MessageHandler) DeserializeResultMessage(message *middleware.Message) ([]fruititem.FruitItem, error) {
@@ -35,7 +57,7 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		return nil, err
 	}
 
-	if innerMessage.ClientId != messageHandler.ClientId {
+	if innerMessage.ClientId != messageHandler.clientId {
 		return nil, nil
 	}
 	return innerMessage.FruitRecords, nil
