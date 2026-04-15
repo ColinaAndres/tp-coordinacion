@@ -61,6 +61,7 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		inputExchange: inputExchange,
 		sumExchange:   sumExchange,
 		accumulator:   accumulator.NewAccumulator(),
+		states:        map[string]*QueryState{},
 		sumAmount:     config.SumAmount,
 		topSize:       config.TopSize,
 	}, nil
