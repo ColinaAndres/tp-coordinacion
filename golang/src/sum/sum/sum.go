@@ -148,9 +148,26 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 }
 
 func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
-	if err := sum.accumulator.AddFruitItems(clientId, fruitRecords); err != nil {
-		return err
+	if sum.accumulator.AddFruitItems(clientId, fruitRecords) {
+		return nil
 	}
+
+	// Si no pude agregar los registros, es porque el cliente ya habia enviado EOF,
+	// por ende enviamos directamente el registro al exchange de salida
+	for _, fruitRecord := range fruitRecords {
+		fruitRecord := []fruititem.FruitItem{fruitRecord}
+		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
+		message, err := inner.SerializeMessage(innerMessage)
+		if err != nil {
+			slog.Debug("While serializing message", "err", err)
+			return err
+		}
+		if err := sum.outputExchange.Send(*message); err != nil {
+			slog.Debug("While sending message", "err", err)
+			return err
+		}
+	}
+
 	return nil
 }
 
