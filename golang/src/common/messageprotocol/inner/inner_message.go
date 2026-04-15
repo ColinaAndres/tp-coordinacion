@@ -5,15 +5,19 @@ import (
 )
 
 type InnerMessage struct {
-	ClientId     string
-	FruitRecords []fruititem.FruitItem
-	IsEOF        bool
+	ClientId       string
+	FruitRecords   []fruititem.FruitItem
+	IsEOF          bool
+	TotalFruitSend int
 }
 
+// Este constructor es util para no cargar a mano el total enviado,
+// Si no es de utilidad y se quisiera cargar a mano, se puede crear el struct directamente
 func NewInnerMessage(clientId string, fruitRecords []fruititem.FruitItem, isEOF bool) InnerMessage {
 	return InnerMessage{
-		ClientId:     clientId,
-		FruitRecords: fruitRecords,
-		IsEOF:        isEOF,
+		ClientId:       clientId,
+		IsEOF:          isEOF,
+		TotalFruitSend: len(fruitRecords),
+		FruitRecords:   fruitRecords,
 	}
 }
