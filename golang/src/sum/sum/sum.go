@@ -73,7 +73,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 
 func (sum *Sum) Run() {
 	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
-		sum.handleSumCommunication(msg, ack, nack)
+		sum.handleCommunication(msg, ack, nack)
 	})
 
 	sum.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
@@ -172,7 +172,7 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	return nil
 }
 
-func (sum *Sum) handleSumCommunication(msg middleware.Message, ack func(), nack func()) {
+func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack func()) {
 	slog.Info("Received message from another sum node")
 	defer ack()
 	innerMessage, err := inner.DeserializeMessage(&msg)
