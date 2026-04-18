@@ -7,14 +7,14 @@ import (
 )
 
 type Accumulator struct {
-	clientMaps  map[string]map[string]fruititem.FruitItem
+	clientMaps  map[string]map[string]*FruitCounter
 	doneClients map[string]bool
 	mutex       sync.RWMutex
 }
 
 func NewAccumulator() *Accumulator {
 	return &Accumulator{
-		clientMaps:  map[string]map[string]fruititem.FruitItem{},
+		clientMaps:  map[string]map[string]*FruitCounter{},
 		doneClients: map[string]bool{},
 		mutex:       sync.RWMutex{},
 	}
@@ -33,7 +33,7 @@ func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fr
 	}
 
 	if _, ok := accumulator.clientMaps[clientId]; !ok {
-		accumulator.clientMaps[clientId] = map[string]fruititem.FruitItem{}
+		accumulator.clientMaps[clientId] = map[string]*FruitCounter{}
 	}
 
 	clientMap := accumulator.clientMaps[clientId]
@@ -41,9 +41,9 @@ func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fr
 	for _, fruitRecord := range fruitRecords {
 		_, ok := clientMap[fruitRecord.Fruit]
 		if ok {
-			clientMap[fruitRecord.Fruit] = clientMap[fruitRecord.Fruit].Sum(fruitRecord)
+			clientMap[fruitRecord.Fruit].AddFruitItem(fruitRecord)
 		} else {
-			clientMap[fruitRecord.Fruit] = fruitRecord
+			clientMap[fruitRecord.Fruit] = NewFruitCounter(fruitRecord)
 		}
 	}
 	return true
@@ -63,7 +63,7 @@ func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruit
 
 	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
 	for _, item := range clientMap {
-		fruitItems = append(fruitItems, item)
+		fruitItems = append(fruitItems, item.fruitItem)
 	}
 
 	delete(accumulator.clientMaps, clientId)
@@ -86,7 +86,7 @@ func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruitite
 
 	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
 	for _, item := range clientMap {
-		fruitItems = append(fruitItems, item)
+		fruitItems = append(fruitItems, item.fruitItem)
 	}
 
 	return fruitItems, true

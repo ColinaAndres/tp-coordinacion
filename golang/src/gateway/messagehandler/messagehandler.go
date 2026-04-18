@@ -30,7 +30,7 @@ func (messageHandler *MessageHandler) SerializeDataMessage(fruitRecord fruititem
 	if err != nil {
 		return nil, err
 	}
-	messageHandler.fruitSerialized += int(fruitRecord.Amount)
+	messageHandler.fruitSerialized++
 	return msg, nil
 }
 
