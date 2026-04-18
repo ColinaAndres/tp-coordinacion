@@ -114,6 +114,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
 	fruitItems, _ := sum.accumulator.GetClientFruitItems(clientId)
+	totalCount, _ := sum.accumulator.GetClientFruitItemsCount(clientId)
 	for _, fruitItem := range fruitItems {
 		fruitRecord := []fruititem.FruitItem{fruitItem}
 		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
@@ -131,7 +132,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 	eofMessage := inner.InnerMessage{
 		ClientId:       clientId,
 		IsEOF:          true,
-		TotalFruitSend: totalFruitSend,
+		TotalFruitSend: totalCount,
 		FruitRecords:   []fruititem.FruitItem{},
 	}
 	message, err := inner.SerializeMessage(eofMessage)

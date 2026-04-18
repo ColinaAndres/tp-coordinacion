@@ -92,6 +92,26 @@ func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruitite
 	return fruitItems, true
 }
 
+// Devuelve la cantidad total de registros analizados para un cliente.
+// Ese total cuenta cuantas veces se contempló cada fruta, no el Amount acumulado.
+// Metodo thread safe.
+func (accumulator *Accumulator) GetClientFruitItemsCount(clientId string) (int, bool) {
+	accumulator.mutex.RLock()
+	defer accumulator.mutex.RUnlock()
+
+	clientMap, ok := accumulator.clientMaps[clientId]
+	if !ok {
+		return 0, false
+	}
+
+	totalCount := 0
+	for _, item := range clientMap {
+		totalCount += item.count
+	}
+
+	return totalCount, true
+}
+
 // Limpia la lista de clientes que ya enviaron EOF, se puede usar para liberar memoria
 // si se sabe que no van a volver a enviar registros
 // Metodo thread safe
