@@ -91,7 +91,7 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 		return
 	}
 
-	aggregation.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords)
+	aggregation.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords, innerMessage.TotalFruitSend)
 }
 
 func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
@@ -102,7 +102,7 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, total
 	state.EOFcount++
 	state.TargetCounts = totalFruitSend
 
-	if !(state.EOFcount == aggregation.sumAmount && state.ReceivedCount == totalFruitSend) {
+	if !(state.EOFcount == aggregation.sumAmount && state.ReceivedCount == state.TargetCounts) {
 		return nil
 	}
 
@@ -151,12 +151,10 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, total
 	return nil
 }
 
-func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
+func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem, totalFruitSend int) {
 	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
 	state := aggregation.getState(clientId)
-	for _, item := range fruitRecords {
-		state.ReceivedCount += int(item.Amount)
-	}
+	state.ReceivedCount += totalFruitSend
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {

@@ -118,7 +118,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
 		innerMessage := inner.InnerMessage{
 			ClientId:       clientId,
-			IsEOF:          true,
+			IsEOF:          false,
 			TotalFruitSend: fruitCounter.Count,
 			FruitRecords:   fruitRecord,
 		}
