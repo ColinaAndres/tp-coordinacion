@@ -2,6 +2,7 @@ package sum
 
 import (
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
@@ -143,7 +144,12 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 			slog.Debug("While serializing message", "err", err)
 			return err
 		}
-		if err := sum.outputExchanges[0].Send(*message); err != nil {
+
+		h := fnv.New32a()
+		h.Write([]byte(fruitCounter.FruitItem.Fruit))
+		selected_exchange := h.Sum32() % uint32(len(sum.outputExchanges))
+
+		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
 			return err
 		}
 	}
@@ -159,11 +165,12 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		slog.Debug("While serializing EOF message", "err", err)
 		return err
 	}
-	if err := sum.outputExchanges[0].Send(*message); err != nil {
-		slog.Debug("While sending EOF message", "err", err)
-		return err
+	for _, exchange := range sum.outputExchanges {
+		if err := exchange.Send(*message); err != nil {
+			slog.Debug("While sending EOF message", "err", err)
+			return err
+		}
 	}
-
 	sum.accumulator.RemoveClientFruitItems(clientId)
 	return nil
 }
