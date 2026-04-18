@@ -10,7 +10,7 @@ type FruitCounter struct {
 }
 
 func NewFruitCounter(fruitItem fruititem.FruitItem) *FruitCounter {
-	return &FruitCounter{fruitItem: fruitItem, count: 0}
+	return &FruitCounter{fruitItem: fruitItem, count: 1}
 }
 
 func (counter *FruitCounter) AddFruitItem(fruitItem fruititem.FruitItem) {
