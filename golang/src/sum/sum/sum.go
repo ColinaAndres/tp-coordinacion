@@ -113,11 +113,16 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 	slog.Info("Received End Of Records message")
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
-	fruitItems, _ := sum.accumulator.GetClientFruitItems(clientId)
-	totalCount, _ := sum.accumulator.GetClientFruitItemsCount(clientId)
-	for _, fruitItem := range fruitItems {
-		fruitRecord := []fruititem.FruitItem{fruitItem}
-		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
+	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
+	for _, fruitCounter := range fruitCounter {
+		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
+		innerMessage := inner.InnerMessage{
+			ClientId:       clientId,
+			IsEOF:          true,
+			TotalFruitSend: fruitCounter.Count,
+			FruitRecords:   fruitRecord,
+		}
+
 		message, err := inner.SerializeMessage(innerMessage)
 		if err != nil {
 			slog.Debug("While serializing message", "err", err)
@@ -132,7 +137,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 	eofMessage := inner.InnerMessage{
 		ClientId:       clientId,
 		IsEOF:          true,
-		TotalFruitSend: totalCount,
+		TotalFruitSend: totalFruitSend,
 		FruitRecords:   []fruititem.FruitItem{},
 	}
 	message, err := inner.SerializeMessage(eofMessage)

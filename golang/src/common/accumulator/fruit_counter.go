@@ -5,15 +5,15 @@ import (
 )
 
 type FruitCounter struct {
-	fruitItem fruititem.FruitItem
-	count     int
+	FruitItem fruititem.FruitItem
+	Count     int
 }
 
 func NewFruitCounter(fruitItem fruititem.FruitItem) *FruitCounter {
-	return &FruitCounter{fruitItem: fruitItem, count: 1}
+	return &FruitCounter{FruitItem: fruitItem, Count: 1}
 }
 
 func (counter *FruitCounter) AddFruitItem(fruitItem fruititem.FruitItem) {
-	counter.fruitItem = counter.fruitItem.Sum(fruitItem)
-	counter.count++
+	counter.FruitItem = counter.FruitItem.Sum(fruitItem)
+	counter.Count++
 }
