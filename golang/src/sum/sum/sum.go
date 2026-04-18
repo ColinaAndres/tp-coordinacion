@@ -129,6 +129,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 	slog.Info("Received End Of Records message")
 
 	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
+	aggregatorCounter := make([]int, len(sum.outputExchanges))
 	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
 	for _, fruitCounter := range fruitCounter {
 		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
@@ -152,25 +153,30 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
 			return err
 		}
+
+		aggregatorCounter[selected_exchange] += fruitCounter.Count
 	}
 
-	eofMessage := inner.InnerMessage{
-		ClientId:       clientId,
-		IsEOF:          true,
-		TotalFruitSend: totalFruitSend,
-		FruitRecords:   []fruititem.FruitItem{},
-	}
-	message, err := inner.SerializeMessage(eofMessage)
-	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err)
-		return err
-	}
-	for _, exchange := range sum.outputExchanges {
+	for i, exchange := range sum.outputExchanges {
+		eofMessage := inner.InnerMessage{
+			ClientId:       clientId,
+			IsEOF:          true,
+			TotalFruitSend: aggregatorCounter[i],
+			FruitRecords:   []fruititem.FruitItem{},
+		}
+
+		message, err := inner.SerializeMessage(eofMessage)
+		if err != nil {
+			slog.Debug("While serializing EOF message", "err", err)
+			return err
+		}
+
 		if err := exchange.Send(*message); err != nil {
 			slog.Debug("While sending EOF message", "err", err)
 			return err
 		}
 	}
+
 	sum.accumulator.RemoveClientFruitItems(clientId)
 	return nil
 }
