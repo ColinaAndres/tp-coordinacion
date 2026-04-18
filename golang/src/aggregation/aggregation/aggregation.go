@@ -100,7 +100,7 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, total
 	//TODO: encapsulable para quedarse con el mayor de total en caso de errores raros
 	state := aggregation.getState(clientId)
 	state.EOFcount++
-	state.TargetCounts = totalFruitSend
+	state.TargetCounts += totalFruitSend
 
 	if !(state.EOFcount == aggregation.sumAmount && state.ReceivedCount == state.TargetCounts) {
 		return nil
