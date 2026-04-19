@@ -24,13 +24,14 @@ type AggregationConfig struct {
 }
 
 type Aggregation struct {
-	outputQueue   middleware.Middleware
-	inputExchange middleware.Middleware
-	sumExchange   middleware.Middleware
-	accumulator   *accumulator.Accumulator
-	states        map[string]*QueryState
-	sumAmount     int
-	topSize       int
+	outputQueue          middleware.Middleware
+	inputExchange        middleware.Middleware
+	sumExchange          middleware.Middleware
+	comunicationExchange middleware.Middleware
+	accumulator          *accumulator.Accumulator
+	states               map[string]*QueryState
+	sumAmount            int
+	topSize              int
 }
 
 func NewAggregation(config AggregationConfig) (*Aggregation, error) {
@@ -56,18 +57,33 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		return nil, err
 	}
 
+	comunicationExchangeRouteKeys := []string{fmt.Sprintf("%s_%d", config.AggregationPrefix, config.Id)}
+	comunicationExchange, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, aggrExchangeRouteKeys, connSettings)
+	if err != nil {
+		outputQueue.Close()
+		inputExchange.Close()
+		sumExchange.Close()
+		return nil, err
+	}
+
 	return &Aggregation{
-		outputQueue:   outputQueue,
-		inputExchange: inputExchange,
-		sumExchange:   sumExchange,
-		accumulator:   accumulator.NewAccumulator(),
-		states:        map[string]*QueryState{},
-		sumAmount:     config.SumAmount,
-		topSize:       config.TopSize,
+		outputQueue:          outputQueue,
+		inputExchange:        inputExchange,
+		sumExchange:          sumExchange,
+		comunicationExchange: comunicationExchange,
+		accumulator:          accumulator.NewAccumulator(),
+		states:               map[string]*QueryState{},
+		sumAmount:            config.SumAmount,
+		topSize:              config.TopSize,
 	}, nil
 }
 
 func (aggregation *Aggregation) Run() {
+
+	go aggregation.comunicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+		aggregation.handleComunication(msg, ack, nack)
+	})
+
 	aggregation.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		aggregation.handleMessage(msg, ack, nack)
 	})
@@ -174,4 +190,27 @@ func (aggregation *Aggregation) getState(clientId string) *QueryState {
 		aggregation.states[clientId] = state
 	}
 	return state
+}
+
+func (aggregation *Aggregation) handleComunication(msg middleware.Message, ack func(), nack func()) {
+	slog.Info("Received comunication message")
+
+	comunicationMessage, err := inner.aggregatorMessageDeserialize(&msg)
+	if err != nil {
+		slog.Error("While deserializing comunication message", "err", err)
+		nack()
+		return
+	}
+
+	aggregation.handleClientCountUpdate(comunicationMessage.ClientId, comunicationMessage.ClientCount)
+
+}
+
+func (aggregation *Aggregation) handleClientCountUpdate(clientId string, clientCount int) {
+	state := aggregation.getState(clientId)
+	state.ReceivedCount += clientCount
+
+	if state.ReceivedCount == state.TargetCounts {
+		aggregation.sendTop(clientId)
+	}
 }
