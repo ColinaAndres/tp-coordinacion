@@ -23,3 +23,13 @@ func NewInnerMessage(clientId string, fruitRecords []fruititem.FruitItem, isEOF 
 		FruitRecords:   fruitRecords,
 	}
 }
+
+func NewComunicationMessage(clientId string, clientCount int) InnerMessage {
+	return InnerMessage{
+		ClientId:       clientId,
+		IsEOF:          false,
+		IsCleanUp:      false,
+		TotalFruitSend: clientCount,
+		FruitRecords:   []fruititem.FruitItem{},
+	}
+}
