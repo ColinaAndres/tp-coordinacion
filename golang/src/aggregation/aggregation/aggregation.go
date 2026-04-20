@@ -57,8 +57,8 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		return nil, err
 	}
 
-	comunicationExchangeRouteKeys := []string{fmt.Sprintf("%s_%d", config.AggregationPrefix, config.Id)}
-	comunicationExchange, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, aggrExchangeRouteKeys, connSettings)
+	comunicationExchangeRouteKeys := []string{config.AggregationPrefix}
+	comunicationExchange, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, comunicationExchangeRouteKeys, connSettings)
 	if err != nil {
 		outputQueue.Close()
 		inputExchange.Close()
