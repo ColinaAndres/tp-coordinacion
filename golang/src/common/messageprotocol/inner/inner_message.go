@@ -4,6 +4,16 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 )
 
+type MessageKind string
+
+const (
+	MessageKindUnknown       MessageKind = "unknown"
+	MessageKindData          MessageKind = "data"
+	MessageKindEOF           MessageKind = "eof"
+	MessageKindCommunication MessageKind = "communication"
+	MessageKindCleanup       MessageKind = "cleanup"
+)
+
 type InnerMessage struct {
 	ClientId       string
 	SenderId       int
@@ -11,6 +21,37 @@ type InnerMessage struct {
 	IsCleanUp      bool
 	TotalFruitSend int
 	FruitRecords   []fruititem.FruitItem
+}
+
+func (message InnerMessage) Kind() MessageKind {
+	switch {
+	case message.IsCleanUp:
+		return MessageKindCleanup
+	case message.IsEOF:
+		return MessageKindEOF
+	case len(message.FruitRecords) == 0:
+		return MessageKindCommunication
+	case len(message.FruitRecords) > 0:
+		return MessageKindData
+	default:
+		return MessageKindUnknown
+	}
+}
+
+func (message InnerMessage) IsDataMessage() bool {
+	return message.Kind() == MessageKindData
+}
+
+func (message InnerMessage) IsEOFMessage() bool {
+	return message.Kind() == MessageKindEOF
+}
+
+func (message InnerMessage) IsCommunicationMessage() bool {
+	return message.Kind() == MessageKindCommunication
+}
+
+func (message InnerMessage) IsCleanupMessage() bool {
+	return message.Kind() == MessageKindCleanup
 }
 
 // Este constructor es util para no cargar a mano el total enviado,
@@ -25,7 +66,21 @@ func NewInnerMessage(clientId string, fruitRecords []fruititem.FruitItem, isEOF 
 	}
 }
 
-func NewComunicationMessage(clientId string, clientCount int) InnerMessage {
+func NewDataMessage(clientId string, fruitRecords []fruititem.FruitItem) InnerMessage {
+	return NewInnerMessage(clientId, fruitRecords, false)
+}
+
+func NewEOFMessage(clientId string, totalFruitSend int) InnerMessage {
+	return InnerMessage{
+		ClientId:       clientId,
+		IsEOF:          true,
+		IsCleanUp:      false,
+		TotalFruitSend: totalFruitSend,
+		FruitRecords:   []fruititem.FruitItem{},
+	}
+}
+
+func NewCommunicationMessage(clientId string, clientCount int) InnerMessage {
 	return InnerMessage{
 		ClientId:       clientId,
 		IsEOF:          false,
@@ -33,4 +88,8 @@ func NewComunicationMessage(clientId string, clientCount int) InnerMessage {
 		TotalFruitSend: clientCount,
 		FruitRecords:   []fruititem.FruitItem{},
 	}
+}
+
+func NewComunicationMessage(clientId string, clientCount int) InnerMessage {
+	return NewCommunicationMessage(clientId, clientCount)
 }

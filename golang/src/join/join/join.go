@@ -75,7 +75,7 @@ func (join *Join) handleMessage(msg middleware.Message, ack func(), nack func())
 		return
 	}
 
-	if innerMessage.IsEOF {
+	if innerMessage.IsEOFMessage() {
 		if err := join.handleEndOfRecordsMessage(innerMessage.ClientId); err != nil {
 			slog.Error("While handling end of records message", "err", err)
 			nack()
@@ -102,7 +102,7 @@ func (join *Join) handleEndOfRecordsMessage(clientId string) error {
 	fruitItems, _ := join.accumulator.RemoveClientFruitItems(clientId)
 	fruitTopRecords := buildFruitTop(fruitItems, join.topSize)
 
-	innerMessageWithTop := inner.NewInnerMessage(clientId, fruitTopRecords, false)
+	innerMessageWithTop := inner.NewDataMessage(clientId, fruitTopRecords)
 	message, err := inner.SerializeMessage(innerMessageWithTop)
 	if err != nil {
 		slog.Debug("While serializing top message", "err", err)
@@ -113,7 +113,7 @@ func (join *Join) handleEndOfRecordsMessage(clientId string) error {
 		return err
 	}
 
-	eofMessage := inner.NewInnerMessage(clientId, []fruititem.FruitItem{}, true)
+	eofMessage := inner.NewEOFMessage(clientId, 0)
 	message, err = inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)

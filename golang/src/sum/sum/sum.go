@@ -107,7 +107,7 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 		return
 	}
 
-	if innerMessage.IsEOF {
+	if innerMessage.IsEOFMessage() {
 		// if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 		// 	slog.Error("While handling end of record message", "err", err)
 		// 	nack()
@@ -133,12 +133,8 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
 	for _, fruitCounter := range fruitCounter {
 		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
-		innerMessage := inner.InnerMessage{
-			ClientId:       clientId,
-			IsEOF:          false,
-			TotalFruitSend: fruitCounter.Count,
-			FruitRecords:   fruitRecord,
-		}
+		innerMessage := inner.NewDataMessage(clientId, fruitRecord)
+		innerMessage.TotalFruitSend = fruitCounter.Count
 
 		message, err := inner.SerializeMessage(innerMessage)
 		if err != nil {
@@ -190,7 +186,7 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	// por ende enviamos directamente el registro al exchange de salida
 	for _, fruitRecord := range fruitRecords {
 		fruitRecord := []fruititem.FruitItem{fruitRecord}
-		innerMessage := inner.NewInnerMessage(clientId, fruitRecord, false)
+		innerMessage := inner.NewDataMessage(clientId, fruitRecord)
 		message, err := inner.SerializeMessage(innerMessage)
 		if err != nil {
 			slog.Debug("While serializing message", "err", err)
@@ -215,13 +211,13 @@ func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack fun
 		return
 	}
 
-	if innerMessage.IsCleanUp {
+	if innerMessage.IsCleanupMessage() {
 		slog.Info("Received clean up message, removing client done data")
 		sum.accumulator.CleanDoneClient(innerMessage.ClientId)
 		return
 	}
 
-	if !innerMessage.IsEOF {
+	if !innerMessage.IsEOFMessage() {
 		slog.Error("Received non EOF message in sum communication exchange")
 		//TODO: Deberia nackear el mensaje? O simplemente ignorarlo? deberia devolver error?
 		return
@@ -235,12 +231,7 @@ func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack fun
 
 func (sum *Sum) notifyEOF(clientId string, totalFruitSend int) error {
 	slog.Info("Notifying other sum nodes about EOF")
-	eofMessage := inner.InnerMessage{
-		ClientId:       clientId,
-		IsEOF:          true,
-		TotalFruitSend: totalFruitSend,
-		FruitRecords:   []fruititem.FruitItem{},
-	}
+	eofMessage := inner.NewEOFMessage(clientId, totalFruitSend)
 	message, err := inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)
