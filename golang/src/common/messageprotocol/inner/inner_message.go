@@ -6,6 +6,7 @@ import (
 
 type InnerMessage struct {
 	ClientId       string
+	SenderId       int
 	IsEOF          bool
 	IsCleanUp      bool
 	TotalFruitSend int

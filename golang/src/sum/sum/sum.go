@@ -157,11 +157,11 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		aggregatorCounter[selected_exchange] += fruitCounter.Count
 	}
 
-	for i, exchange := range sum.outputExchanges {
+	for _, exchange := range sum.outputExchanges {
 		eofMessage := inner.InnerMessage{
 			ClientId:       clientId,
 			IsEOF:          true,
-			TotalFruitSend: aggregatorCounter[i],
+			TotalFruitSend: totalFruitSend,
 			FruitRecords:   []fruititem.FruitItem{},
 		}
 

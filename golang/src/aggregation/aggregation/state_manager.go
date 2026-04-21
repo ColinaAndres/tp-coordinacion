@@ -5,9 +5,10 @@ import (
 )
 
 type QueryState struct {
-	ReceivedCount int
-	TargetCount   int
-	EOFcount      int
+	LocalCount  int
+	PeersCount  int
+	TargetCount int
+	EOFcount    int
 }
 
 type StateManager struct {
@@ -23,7 +24,7 @@ func NewStateManager(targetEOFCount int) *StateManager {
 	}
 }
 
-func (manager *StateManager) AddCount(clientId string, count int) {
+func (manager *StateManager) AddLocalCount(clientId string, count int) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 
@@ -32,7 +33,7 @@ func (manager *StateManager) AddCount(clientId string, count int) {
 		state = &QueryState{}
 		manager.clientStates[clientId] = state
 	}
-	state.ReceivedCount += count
+	state.LocalCount += count
 }
 
 func (manager *StateManager) MarkEOF(clientId string, total_count int) {
@@ -67,5 +68,28 @@ func (manager *StateManager) DoneReceiving(clientId string) bool {
 	if !ok {
 		return false
 	}
-	return state.ReceivedCount == state.TargetCount
+	return (state.LocalCount+state.PeersCount) == state.TargetCount && state.EOFcount == manager.TargetEOFCount
+}
+
+func (manager *StateManager) GetReceivedCount(clientId string) int {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+
+	state, ok := manager.clientStates[clientId]
+	if !ok {
+		return 0
+	}
+	return state.LocalCount
+}
+
+func (manager *StateManager) AddPeersCount(clientId string, count int) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	state, ok := manager.clientStates[clientId]
+	if !ok {
+		state = &QueryState{}
+		manager.clientStates[clientId] = state
+	}
+	state.PeersCount += count
 }
