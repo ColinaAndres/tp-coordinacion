@@ -23,10 +23,11 @@ type SumConfig struct {
 }
 
 type Sum struct {
-	inputQueue            middleware.Middleware
-	outputExchanges       []middleware.Middleware
-	communicationExchange middleware.Middleware
-	accumulator           *accumulator.Accumulator
+	inputQueue                  middleware.Middleware
+	outputExchanges             []middleware.Middleware
+	communicationOutputExchange middleware.Middleware
+	communicationInputExchange  middleware.Middleware
+	accumulator                 *accumulator.Accumulator
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -55,22 +56,16 @@ func NewSum(config SumConfig) (*Sum, error) {
 		outputExchanges[i] = exchange
 	}
 
-	// outputExchanges, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, outputExchangeRouteKeys, connSettings)
-	// if err != nil {
-	// 	inputQueue.Close()
-	// 	return nil, err
-	// }
+	communicationOutputExchangeRouteKeys := make([]string, config.SumAmount-1)
+	for i := range communicationOutputExchangeRouteKeys {
+		if i >= config.Id {
+			communicationOutputExchangeRouteKeys[i] = fmt.Sprintf("%s.%d", config.SumPrefix, i+1)
+		} else {
+			communicationOutputExchangeRouteKeys[i] = fmt.Sprintf("%s.%d", config.SumPrefix, i)
+		}
+	}
 
-	communicationExchangeRouteKeys := []string{config.SumPrefix}
-
-	// for i := range config.SumAmount {
-	// 	if i == config.Id {
-	// 		continue
-	// 	}
-	// 	communicationExchangeRouteKeys[i] = fmt.Sprintf("%s_%d", config.SumPrefix, i)
-	// }
-
-	communicationExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationExchangeRouteKeys, connSettings)
+	communicationOutputExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationOutputExchangeRouteKeys, connSettings)
 	if err != nil {
 		inputQueue.Close()
 		for _, exchange := range outputExchanges {
@@ -79,16 +74,28 @@ func NewSum(config SumConfig) (*Sum, error) {
 		return nil, err
 	}
 
+	communicationInputExchangeRouteKey := []string{fmt.Sprintf("%s.%d", config.SumPrefix, config.Id)}
+	communicationInputExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationInputExchangeRouteKey, connSettings)
+	if err != nil {
+		inputQueue.Close()
+		for _, exchange := range outputExchanges {
+			exchange.Close()
+		}
+		communicationOutputExchange.Close()
+		return nil, err
+	}
+
 	return &Sum{
-		inputQueue:            inputQueue,
-		outputExchanges:       outputExchanges,
-		communicationExchange: communicationExchange,
-		accumulator:           accumulator.NewAccumulator(),
+		inputQueue:                  inputQueue,
+		outputExchanges:             outputExchanges,
+		communicationOutputExchange: communicationOutputExchange,
+		communicationInputExchange:  communicationInputExchange,
+		accumulator:                 accumulator.NewAccumulator(),
 	}, nil
 }
 
 func (sum *Sum) Run() {
-	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
+	go sum.communicationInputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		sum.handleCommunication(msg, ack, nack)
 	})
 
@@ -98,8 +105,6 @@ func (sum *Sum) Run() {
 }
 
 func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
-	defer ack()
-
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
@@ -108,28 +113,34 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	}
 
 	if innerMessage.IsEOFMessage() {
-		// if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-		// 	slog.Error("While handling end of record message", "err", err)
-		// 	nack()
-		// }
+		if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
+			slog.Error("While handling end of record message", "err", err)
+			nack()
+			return
+		}
+
 		if err := sum.notifyEOF(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While notifying EOF to other sum nodes", "err", err)
 			nack()
+			return
 		}
+
+		ack()
 		return
 	}
 
 	if err := sum.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords); err != nil {
 		slog.Error("While handling data message", "err", err)
 		nack()
+		return
 	}
+
+	ack()
 }
 
 func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message")
 
-	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
-	aggregatorCounter := make([]int, len(sum.outputExchanges))
 	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
 	for _, fruitCounter := range fruitCounter {
 		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
@@ -149,8 +160,6 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
 			return err
 		}
-
-		aggregatorCounter[selected_exchange] += fruitCounter.Count
 	}
 
 	for _, exchange := range sum.outputExchanges {
@@ -237,7 +246,7 @@ func (sum *Sum) notifyEOF(clientId string, totalFruitSend int) error {
 		slog.Debug("While serializing EOF message", "err", err)
 		return err
 	}
-	if err := sum.communicationExchange.Send(*message); err != nil {
+	if err := sum.communicationOutputExchange.Send(*message); err != nil {
 		slog.Debug("While sending EOF message", "err", err)
 		return err
 	}
