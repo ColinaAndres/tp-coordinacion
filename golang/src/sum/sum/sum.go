@@ -55,21 +55,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		outputExchanges[i] = exchange
 	}
 
-	// outputExchanges, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, outputExchangeRouteKeys, connSettings)
-	// if err != nil {
-	// 	inputQueue.Close()
-	// 	return nil, err
-	// }
-
 	communicationExchangeRouteKeys := []string{config.SumPrefix}
-
-	// for i := range config.SumAmount {
-	// 	if i == config.Id {
-	// 		continue
-	// 	}
-	// 	communicationExchangeRouteKeys[i] = fmt.Sprintf("%s_%d", config.SumPrefix, i)
-	// }
-
 	communicationExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, communicationExchangeRouteKeys, connSettings)
 	if err != nil {
 		inputQueue.Close()
@@ -98,8 +84,6 @@ func (sum *Sum) Run() {
 }
 
 func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
-	defer ack()
-
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
@@ -108,14 +92,11 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	}
 
 	if innerMessage.IsEOFMessage() {
-		// if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-		// 	slog.Error("While handling end of record message", "err", err)
-		// 	nack()
-		// }
 		if err := sum.notifyEOF(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While notifying EOF to other sum nodes", "err", err)
 			nack()
 		}
+		ack()
 		return
 	}
 
@@ -123,12 +104,12 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 		slog.Error("While handling data message", "err", err)
 		nack()
 	}
+	ack()
 }
 
 func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message")
 
-	//TODO: Cuando haya varios nodos, podria pasar que reciba EOF y no tener el cliente
 	aggregatorCounter := make([]int, len(sum.outputExchanges))
 	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
 	for _, fruitCounter := range fruitCounter {
@@ -185,14 +166,19 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	// Si no pude agregar los registros, es porque el cliente ya habia enviado EOF,
 	// por ende enviamos directamente el registro al exchange de salida
 	for _, fruitRecord := range fruitRecords {
-		fruitRecord := []fruititem.FruitItem{fruitRecord}
-		innerMessage := inner.NewDataMessage(clientId, fruitRecord)
+		fruititems := []fruititem.FruitItem{fruitRecord}
+		innerMessage := inner.NewDataMessage(clientId, fruititems)
 		message, err := inner.SerializeMessage(innerMessage)
 		if err != nil {
 			slog.Debug("While serializing message", "err", err)
 			return err
 		}
-		if err := sum.outputExchanges[0].Send(*message); err != nil {
+
+		h := fnv.New32a()
+		h.Write([]byte(fruitRecord.Fruit))
+		selected_exchange := h.Sum32() % uint32(len(sum.outputExchanges))
+
+		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
 			slog.Debug("While sending message", "err", err)
 			return err
 		}
@@ -203,7 +189,6 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 
 func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack func()) {
 	slog.Info("Received message from communication exchange")
-	defer ack()
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
@@ -214,19 +199,23 @@ func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack fun
 	if innerMessage.IsCleanupMessage() {
 		slog.Info("Received clean up message, removing client done data")
 		sum.accumulator.CleanDoneClient(innerMessage.ClientId)
+		ack()
 		return
 	}
 
-	if !innerMessage.IsEOFMessage() {
-		slog.Error("Received non EOF message in sum communication exchange")
-		//TODO: Deberia nackear el mensaje? O simplemente ignorarlo? deberia devolver error?
+	if innerMessage.IsEOFMessage() {
+		slog.Info("Received EOF message")
+		if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
+			slog.Error("While handling end of record message", "err", err)
+			nack()
+			return
+		}
+		ack()
 		return
 	}
 
-	if err := sum.handleEndOfRecordMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-		slog.Error("While handling end of record message", "err", err)
-		nack()
-	}
+	slog.Error("Received communication message, but no handler for it")
+	nack()
 }
 
 func (sum *Sum) notifyEOF(clientId string, totalFruitSend int) error {
