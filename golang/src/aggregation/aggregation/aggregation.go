@@ -3,7 +3,10 @@ package aggregation
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sort"
+	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
@@ -99,6 +102,7 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 }
 
 func (aggregation *Aggregation) Run() {
+	go aggregation.handleSignal()
 
 	go aggregation.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		aggregation.handleComunication(msg, ack, nack)
@@ -285,4 +289,20 @@ func (aggregation *Aggregation) notifyClientCountUpdate(clientId string, totalFr
 	}
 
 	return nil
+}
+
+func (aggregation *Aggregation) Close() {
+	aggregation.outputQueue.Close()
+	aggregation.inputExchange.Close()
+	aggregation.sumExchange.Close()
+	aggregation.communicationExchange.Close()
+	aggregation.aggrExchange.Close()
+}
+
+func (aggregation *Aggregation) handleSignal() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	<-signals
+	slog.Info("SIGTERM signal received")
+	aggregation.Close()
 }

@@ -2,7 +2,10 @@ package join
 
 import (
 	"log/slog"
+	"os"
+	"os/signal"
 	"sort"
+	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
@@ -60,6 +63,8 @@ func NewJoin(config JoinConfig) (*Join, error) {
 }
 
 func (join *Join) Run() {
+	go join.handleSignal()
+
 	join.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		join.handleMessage(msg, ack, nack)
 	})
@@ -144,4 +149,17 @@ func (join *Join) getState(clientId string) *JoinState {
 	}
 
 	return state
+}
+
+func (join *Join) Close() {
+	join.inputQueue.Close()
+	join.outputQueue.Close()
+}
+
+func (join *Join) handleSignal() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	<-signals
+	slog.Info("SIGTERM signal received")
+	join.Close()
 }

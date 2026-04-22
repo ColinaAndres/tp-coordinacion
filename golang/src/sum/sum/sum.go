@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
@@ -74,6 +77,8 @@ func NewSum(config SumConfig) (*Sum, error) {
 }
 
 func (sum *Sum) Run() {
+	go sum.handleSignal()
+
 	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		sum.handleCommunication(msg, ack, nack)
 	})
@@ -110,7 +115,6 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message")
 
-	aggregatorCounter := make([]int, len(sum.outputExchanges))
 	fruitCounter, _ := sum.accumulator.GetClientFruitCounter(clientId)
 	for _, fruitCounter := range fruitCounter {
 		fruitRecord := []fruititem.FruitItem{fruitCounter.FruitItem}
@@ -130,8 +134,6 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int) er
 		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
 			return err
 		}
-
-		aggregatorCounter[selected_exchange] += fruitCounter.Count
 	}
 
 	for _, exchange := range sum.outputExchanges {
@@ -187,6 +189,10 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	return nil
 }
 
+func (sum *Sum) sendBatch() {
+
+}
+
 func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack func()) {
 	slog.Info("Received message from communication exchange")
 	innerMessage, err := inner.DeserializeMessage(&msg)
@@ -231,4 +237,20 @@ func (sum *Sum) notifyEOF(clientId string, totalFruitSend int) error {
 		return err
 	}
 	return nil
+}
+
+func (sum *Sum) Close() {
+	sum.inputQueue.Close()
+	for _, exchange := range sum.outputExchanges {
+		exchange.Close()
+	}
+	sum.communicationExchange.Close()
+}
+
+func (sum *Sum) handleSignal() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	<-signals
+	slog.Info("SIGTERM signal received")
+	sum.Close()
 }
