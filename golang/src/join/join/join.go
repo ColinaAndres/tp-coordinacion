@@ -63,6 +63,8 @@ func NewJoin(config JoinConfig) (*Join, error) {
 }
 
 func (join *Join) Run() {
+	defer join.Close()
+
 	go join.handleSignal()
 
 	join.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {

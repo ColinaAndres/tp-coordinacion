@@ -102,6 +102,8 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 }
 
 func (aggregation *Aggregation) Run() {
+	defer aggregation.Close()
+
 	go aggregation.handleSignal()
 
 	go aggregation.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {

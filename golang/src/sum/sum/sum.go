@@ -77,6 +77,8 @@ func NewSum(config SumConfig) (*Sum, error) {
 }
 
 func (sum *Sum) Run() {
+	defer sum.Close()
+
 	go sum.handleSignal()
 
 	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
