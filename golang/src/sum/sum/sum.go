@@ -149,21 +149,29 @@ func (sum *Sum) HandleEOFMessage(clientId string, totalFruitSended int) error {
 func (sum *Sum) sendProcessedData(clientId string, itemsToFlush []fruititem.FruitItem) error {
 	slog.Info("Sending processed data to aggregation nodes")
 
+	batches := make([][]fruititem.FruitItem, len(sum.outputExchanges))
 	for _, fruitItem := range itemsToFlush {
-		fruitRecord := []fruititem.FruitItem{fruitItem}
-		innerMessage := inner.NewDataMessage(clientId, fruitRecord)
+		h := fnv.New32a()
+		h.Write([]byte(fruitItem.Fruit))
+		selected_exchange := h.Sum32() % uint32(len(sum.outputExchanges))
+		batches[selected_exchange] = append(batches[selected_exchange], fruitItem)
+	}
 
+	for selectedExchange, batch := range batches {
+		if len(batch) == 0 {
+			continue
+		}
+
+		innerMessage := inner.NewDataMessage(clientId, batch)
 		message, err := inner.SerializeMessage(innerMessage)
+
 		if err != nil {
 			slog.Debug("While serializing message", "err", err)
 			return err
 		}
 
-		h := fnv.New32a()
-		h.Write([]byte(fruitItem.Fruit))
-		selected_exchange := h.Sum32() % uint32(len(sum.outputExchanges))
-
-		if err := sum.outputExchanges[selected_exchange].Send(*message); err != nil {
+		if err := sum.outputExchanges[selectedExchange].Send(*message); err != nil {
+			slog.Debug("While sending DAta message", "err", err)
 			return err
 		}
 	}
