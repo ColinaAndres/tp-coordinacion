@@ -79,3 +79,59 @@ Al momento de la evaluación y ejecución de las pruebas se **descartarán** o *
 - La implementación del protocolo de comunicación externo y `FruitItem`.
 
 Redactar un breve informe explicando el modo en que se coordinan las instancias de Sum y Aggregation, así como el modo en el que el sistema escala respecto a los clientes y a la cantidad de controles.
+
+---
+
+## Informe
+
+### Setup necesario
+
+Para tener un mayor control de los datos que viajan a traves de los distintos nodos de la aplicacion, se agregaron tres utilidades al MessageHandler del gateway:
+
+- Al momento de instanciarlo se crea un clientId para identificar univocamente al cliente (se usa un timestamp con un desvio random para evitar colisiones, podria usarse uuid).
+
+- Cada vez que se llama al metodo SerializeDataMessage, se incrementa en 1 un contador interno el cual lleva el conteo de todos los registros que van siendo serializados (notese que no se suma la amount de cada fruitItem pues no cumpliria con la condicion de uso opaco).
+
+- Al momento que se recibe SerializeEOFMessage se envia un EOFMessage el cual internamente se le carga la cantidad de registros que fueron serializados.
+
+Una vez realizada la serializacion de mensajes, los mismos son enviado por una Queue la cual ira repartiendo los mensajes con una estrategia de round robin a los distintos nodos Sum.
+
+### Coordinacion entre nodos Sum
+
+#### Flujo General
+Cada nodo Suma se mantiene escuchando de dos fuentes, de su inputQueue y de su communicationExchange el cual esta configurado para que todo mensaje que se envie por este medio le llegue a todas las instancias de Suma. Esto implica tener 2 go routines consumiendo de las dos fuentes.
+
+Los nodos suman van a operar con normalidad procesando los mensages de datos y llevando cuenta de cuantos registros de procesaron para un cliente en un contador ownCount. Eventualmente llegara el mensaje de EOF, En ese moemnto el nodo que lo recibe lo envia al exchange de comunicacion de esta forma podemos dividir el flujo logico del flujo de datos. 
+
+Cuando los nodos suma reciben el mensaje de EOF previamnete broadcasteado , marcan localmente que el cliente el cual termino su envio ahora esta en etapa de done y el total de registros del mismo (dato parte del mensaje desde el MessageHandler), una vez hecho esto se notifica por medio del communicationExchange la cantidad de registros que proceso cada nodo suma
+
+Al recibir el mensaje que contiene la cantidad de registros procesados por otro nodo Sum de forma se suma localmente en un contador peerCount.
+
+Finalmente en el momento en el que el conteo local y el conteo de peers sea igual a la totalidad de registros enviados del cliente, se pasa a la fase de envio a los nodos de Aggregacion
+
+#### Manejo de Race Conditions
+Ya que los nodos Suma tienen dos go routines, Puede pasar el caso de que se procesa un mensaje de EOF sin haber terminado de procesar los mensajes de datos, Para ello se abstrajo la logica de conteo y procesamiento de registros en una Struct Accumulator el cual internamente asegura atomicidad de las operaciones a traves de un Mutex.  
+
+### Coordinacion entre nodos Sum y Aggregation
+
+Al momento del envio de datos desde un Nodo Sum, se toman todos los datos procesados y se les aplica a todos una funcion determinisitica de hashing la cual toma el nombre de la fruta de cada fruitItem, se le aplica la funcion de hashing y se uso el modulo de la cantidad de agregadores del sistema, de esa forma podemos decir que si la funcion de hashing es lo suficiente mente buena, siempre podremos distribuir los fruiItems de forma parcialmente equitativa
+
+Despues de haber enviado la informacion procesada por los nodos Sum, se le envia a todas las intancias de aggregation un mensaje de EOF
+
+Los nodos de Agregation procesaran los mensajes de datos que le vayan llegando, y realizara el top parcial de sus frutas si y solo si, la cantidad de EOF recibida el igual a la cantidad de nodos suma. 
+
+### Coordinacion entre nodos Aggregation y Join
+
+Analogo a la seccion anterior, los nodos de agregacion envian un mensaje con el top parcial procesado y posteriormente se envia un mensaje de EOF
+
+El nodo Join, ira almacenando los tops parciales y realizara el top final si y solo si la cantidad de mensages de EOF recibidos es igual a la cantidad de instancias de nodos de agregacion
+
+### Escalabilidad
+
+Hay varios aspectos a analizar:
+
+- Mayor cantidad de clientes: La aplicacion puede manejar a muchos clientes en simultaneo ya que gracias al clientId se puede identificar sin errores los datos y el estado del pedido de cada cliente.
+
+- Mayor cantidad de datos: De la mano con lo dicho anteriormente, si se tiene un set de datos mas grande aun ya sea porque un cliente tiene muchos datos a procesar o bien mas clientes implican mas datos, el sistema podria levantar mas nodos de Sum para repartir mas trabajo (ya que gracias a rabbit, la distribucion de datos ocurre usando Round Robin)
+
+- Mayor cantidad de tipos de fruta: En caso de haber mayor numero de frutas (numero el cual es infimo en comparacion a la cantidad de datos), podemos decir que distribuimos bien los datos a los nodos de Aggregation siempre y cuando la funcion de hashing utilizada este bien optimizada para distribuir de forma lo suficientemente equitativa. No obstante siempre podemos sumar mas nodos de Aggregation si asi quisieramos
