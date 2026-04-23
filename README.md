@@ -83,6 +83,9 @@ Redactar un breve informe explicando el modo en que se coordinan las instancias 
 ---
 
 ## Informe
+
+Solucion desarrollada en Golang
+
 ### Setup necesario
 
 Para tener un mayor control de los datos que viajan a través de los distintos nodos de la aplicación, se agregaron tres utilidades al MessageHandler del gateway:
