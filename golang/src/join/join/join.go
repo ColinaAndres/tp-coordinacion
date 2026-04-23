@@ -7,9 +7,9 @@ import (
 	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruitmap"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/topaggregator"
 )
 
 type JoinConfig struct {
@@ -25,12 +25,9 @@ type JoinConfig struct {
 }
 
 type Join struct {
-	inputQueue        middleware.Middleware
-	outputQueue       middleware.Middleware
-	fruitMaps         map[string]*fruitmap.FruitMap
-	clientsEOF        map[string]int
-	aggregationAmount int
-	topSize           int
+	inputQueue    middleware.Middleware
+	outputQueue   middleware.Middleware
+	topAggregator *topaggregator.TopAggregator
 }
 
 func NewJoin(config JoinConfig) (*Join, error) {
@@ -47,13 +44,12 @@ func NewJoin(config JoinConfig) (*Join, error) {
 		return nil, err
 	}
 
+	topAggregagator := topaggregator.NewTopAggregator(config.AggregationAmount, config.TopSize)
+
 	return &Join{
-		inputQueue:        inputQueue,
-		outputQueue:       outputQueue,
-		fruitMaps:         map[string]*fruitmap.FruitMap{},
-		clientsEOF:        map[string]int{},
-		aggregationAmount: config.AggregationAmount,
-		topSize:           config.TopSize,
+		inputQueue:    inputQueue,
+		outputQueue:   outputQueue,
+		topAggregator: topAggregagator,
 	}, nil
 }
 
@@ -90,40 +86,20 @@ func (join *Join) handleMessage(msg middleware.Message, ack func(), nack func())
 }
 
 func (join *Join) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
-	clientMap, ok := join.fruitMaps[clientId]
-	if !ok {
-		clientMap = fruitmap.NewFruitMap()
-		join.fruitMaps[clientId] = clientMap
-	}
-	clientMap.Add(fruitRecords)
+	join.topAggregator.Add(clientId, fruitRecords)
 }
 
 func (join *Join) handleEndOfRecordsMessage(clientId string) error {
-	slog.Info("Received EOF message from client", "clientId", clientId)
-	clientEOFCount, ok := join.clientsEOF[clientId]
-	if !ok {
-		clientEOFCount = 0
-		join.clientsEOF[clientId] = clientEOFCount
-	}
-
-	join.clientsEOF[clientId] = clientEOFCount + 1
-	if join.clientsEOF[clientId] == join.aggregationAmount {
-		return join.sendTop(clientId)
+	slog.Info("Received EOF message")
+	top := join.topAggregator.RegisterEOF(clientId)
+	if top != nil {
+		return join.sendTop(clientId, top)
 	}
 	return nil
 }
 
-func (join *Join) buildFruitTop(clientId string) []fruititem.FruitItem {
-	fruitMap, ok := join.fruitMaps[clientId]
-	if !ok {
-		return []fruititem.FruitItem{}
-	}
-	return fruitMap.Top(join.topSize)
-}
-
-func (join *Join) sendTop(clientId string) error {
-	fruitTopRecords := join.buildFruitTop(clientId)
-	innerMessageWithTop := inner.NewDataMessage(clientId, fruitTopRecords)
+func (join *Join) sendTop(clientId string, top []fruititem.FruitItem) error {
+	innerMessageWithTop := inner.NewDataMessage(clientId, top)
 	message, err := inner.SerializeMessage(innerMessageWithTop)
 	if err != nil {
 		slog.Debug("While serializing top message", "err", err)

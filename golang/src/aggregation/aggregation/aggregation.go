@@ -8,9 +8,9 @@ import (
 	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruitmap"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/topaggregator"
 )
 
 type AggregationConfig struct {
@@ -28,10 +28,7 @@ type AggregationConfig struct {
 type Aggregation struct {
 	outputQueue   middleware.Middleware
 	inputExchange middleware.Middleware
-	fruitMaps     map[string]*fruitmap.FruitMap
-	clientsEOF    map[string]int
-	sumAmount     int
-	topSize       int
+	topAggregator *topaggregator.TopAggregator
 }
 
 func NewAggregation(config AggregationConfig) (*Aggregation, error) {
@@ -49,13 +46,12 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		return nil, err
 	}
 
+	topAggregator := topaggregator.NewTopAggregator(config.SumAmount, config.TopSize)
+
 	return &Aggregation{
 		outputQueue:   outputQueue,
 		inputExchange: inputExchange,
-		fruitMaps:     map[string]*fruitmap.FruitMap{},
-		clientsEOF:    map[string]int{},
-		sumAmount:     config.SumAmount,
-		topSize:       config.TopSize,
+		topAggregator: topAggregator,
 	}, nil
 }
 
@@ -91,42 +87,20 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 }
 
 func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
-	slog.Info("Received End Of Records message", "clientId", clientId, "total de registros", totalFruitSend)
-
-	clientEOFCount, ok := aggregation.clientsEOF[clientId]
-	if !ok {
-		clientEOFCount = 0
-		aggregation.clientsEOF[clientId] = clientEOFCount
-	}
-
-	aggregation.clientsEOF[clientId] = clientEOFCount + 1
-
-	if aggregation.clientsEOF[clientId] == aggregation.sumAmount {
-		return aggregation.sendTop(clientId)
+	slog.Info("Received EOF message")
+	top := aggregation.topAggregator.RegisterEOF(clientId)
+	if top != nil {
+		return aggregation.sendTop(clientId, top)
 	}
 	return nil
 }
 
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem, totalFruitSend int) {
-	clientMap, ok := aggregation.fruitMaps[clientId]
-	if !ok {
-		clientMap = fruitmap.NewFruitMap()
-		aggregation.fruitMaps[clientId] = clientMap
-	}
-	clientMap.Add(fruitRecords)
+	aggregation.topAggregator.Add(clientId, fruitRecords)
 }
 
-func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
-	fruitMap, ok := aggregation.fruitMaps[clientId]
-	if !ok {
-		return []fruititem.FruitItem{}
-	}
-	return fruitMap.Top(aggregation.topSize)
-}
-
-func (aggregation *Aggregation) sendTop(clientId string) error {
-	fruitTopRecords := aggregation.buildFruitTop(clientId)
-	innerMessageWithTop := inner.NewDataMessage(clientId, fruitTopRecords)
+func (aggregation *Aggregation) sendTop(clientId string, top []fruititem.FruitItem) error {
+	innerMessageWithTop := inner.NewDataMessage(clientId, top)
 	message, err := inner.SerializeMessage(innerMessageWithTop)
 	if err != nil {
 		slog.Debug("While serializing top message", "err", err)
@@ -148,11 +122,12 @@ func (aggregation *Aggregation) sendTop(clientId string) error {
 		return err
 	}
 
-	delete(aggregation.fruitMaps, clientId)
+	aggregation.topAggregator.Clean(clientId)
 	return nil
 }
 
 func (aggregation *Aggregation) Close() {
+	//clean all?
 	aggregation.outputQueue.Close()
 	aggregation.inputExchange.Close()
 }
