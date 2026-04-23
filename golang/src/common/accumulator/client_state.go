@@ -36,12 +36,16 @@ func (cs *clientState) isReadyToFlush() bool {
 		cs.ownCount+cs.peerCount == cs.totalExpected
 }
 
-func (s *clientState) takeItems() []fruititem.FruitItem {
-	items := make([]fruititem.FruitItem, 0, len(s.fruitItems))
-	for _, item := range s.fruitItems {
+func (cs *clientState) takeItems() []fruititem.FruitItem {
+	items := make([]fruititem.FruitItem, 0, len(cs.fruitItems))
+	for _, item := range cs.fruitItems {
 		items = append(items, item)
 	}
-	s.fruitItems = nil
-	s.flushed = true
+	cs.fruitItems = nil
+	cs.flushed = true
 	return items
+}
+
+func (cs *clientState) isClosing() bool {
+	return cs.totalExpected >= 0
 }
