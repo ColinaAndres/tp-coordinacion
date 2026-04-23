@@ -8,7 +8,6 @@ import (
 	"sort"
 	"syscall"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
@@ -32,7 +31,7 @@ type Aggregation struct {
 	sumExchange           middleware.Middleware
 	aggrExchange          middleware.Middleware
 	communicationExchange middleware.Middleware
-	accumulator           *accumulator.Accumulator
+	fruitMaps             map[string]*FruitMap
 	stateManager          *StateManager
 	sumAmount             int
 	topSize               int
@@ -89,12 +88,12 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 	}
 
 	return &Aggregation{
-		outputQueue:           outputQueue,
-		inputExchange:         inputExchange,
-		accumulator:           //Objeto que encapsule tenga logica de sumado mas tops,
-		sumAmount:             config.SumAmount,
-		clientsEOF:			  map[string]int,	
-		topSize:               config.TopSize,
+		outputQueue:   outputQueue,
+		inputExchange: inputExchange,
+		fruitMaps:     map[string]*FruitMap{},
+		sumAmount:     config.SumAmount,
+		clientsEOF:    map[string]int,
+		topSize:       config.TopSize,
 	}, nil
 }
 

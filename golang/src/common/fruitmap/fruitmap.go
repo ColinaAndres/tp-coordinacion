@@ -1,4 +1,4 @@
-package accumulator
+package fruitmap
 
 import (
 	"sort"
