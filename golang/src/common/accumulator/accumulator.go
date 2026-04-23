@@ -7,112 +7,88 @@ import (
 )
 
 type Accumulator struct {
-	clientMaps  map[string]map[string]*FruitCounter
-	doneClients map[string]bool
-	mutex       sync.RWMutex
+	clients map[string]*clientState
+	mutex   sync.Mutex
 }
 
 func NewAccumulator() *Accumulator {
 	return &Accumulator{
-		clientMaps:  map[string]map[string]*FruitCounter{},
-		doneClients: map[string]bool{},
-		mutex:       sync.RWMutex{},
+		clients: map[string]*clientState{},
+		mutex:   sync.Mutex{},
 	}
+}
+
+// Crea un nuevo estado para el cliente si no existe o devuelve el estado existente.
+func (accumulator *Accumulator) getClientState(clientId string) *clientState {
+	if state, ok := accumulator.clients[clientId]; ok {
+		return state
+	}
+	state := newClientState()
+	accumulator.clients[clientId] = state
+	return state
 }
 
 // Agrega los registros de un cliente al acumulador,
-// sumando los registros de frutas repetidos, si no existia la entrada la crea pero si
-// el cliente ya habia enviado un EOF, no se agregan los registros y se devuelve false.
+// sumando los registros de frutas repetidos, si no existia la entrada la crea pero.
+// Devuelve:
+// - closing: true si el cliente ya envió EOF, false en caso contrario
+// - newCount: cantidad de registros agregados al acumulador
+// - itemsToFlush: lista de items a enviar al peer, si el cliente ya envió EOF y se alcanzó el total esperado, nil en caso contrario
 // Metodo thread safe
-func (accumulator *Accumulator) AddFruitItems(clientId string, fruitRecords []fruititem.FruitItem) bool {
+func (accumulator *Accumulator) AddFruitItems(clientId string, fruitItems []fruititem.FruitItem) (closing bool, newCount int, itemsToFlush []fruititem.FruitItem) {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()
 
-	if accumulator.doneClients[clientId] {
-		return false
+	state := accumulator.getClientState(clientId)
+	newCount = len(fruitItems)
+	state.ownCount += newCount
+	state.addItems(fruitItems)
+	closing = state.isClosing()
+
+	if state.isReadyToFlush() {
+		itemsToFlush = state.takeItems()
 	}
 
-	if _, ok := accumulator.clientMaps[clientId]; !ok {
-		accumulator.clientMaps[clientId] = map[string]*FruitCounter{}
-	}
-
-	clientMap := accumulator.clientMaps[clientId]
-
-	for _, fruitRecord := range fruitRecords {
-		_, ok := clientMap[fruitRecord.Fruit]
-		if ok {
-			clientMap[fruitRecord.Fruit].AddFruitItem(fruitRecord)
-		} else {
-			clientMap[fruitRecord.Fruit] = NewFruitCounter(fruitRecord)
-		}
-	}
-	return true
+	return closing, newCount, itemsToFlush
 }
 
-// Elimina los registros de un cliente y devuelve la lista de items eliminados.
-// Devuelve false si el cliente no existía
-// Metodo thread safe
-func (accumulator *Accumulator) RemoveClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
+// Marca que el cliente ya envio EOF, y devuelve la cantidad de registros que se analizaron para el cliente,
+// y los items a enviar al aggregador si se alcanzó el total esperado
+func (accumulator *Accumulator) MarkClientAsDone(clientId string, totalExpected int) (ownCount int, itemsToFlush []fruititem.FruitItem) {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()
 
-	clientMap, ok := accumulator.clientMaps[clientId]
-	if !ok {
-		return nil, false
+	state := accumulator.getClientState(clientId)
+	state.totalExpected = totalExpected
+	ownCount = state.ownCount
+
+	if state.isReadyToFlush() {
+		itemsToFlush = state.takeItems()
 	}
 
-	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
-	for _, item := range clientMap {
-		fruitItems = append(fruitItems, item.FruitItem)
-	}
+	return ownCount, itemsToFlush
 
-	delete(accumulator.clientMaps, clientId)
-	accumulator.doneClients[clientId] = true
-
-	return fruitItems, true
 }
 
-// Devuelve la lista de items acumulados para un cliente sin eliminar los registros del acumulador.
-// Devuelve false si el cliente no existía.
-// Metodo thread safe, se pueden realizar lecturas concurrentes.
-func (accumulator *Accumulator) GetClientFruitItems(clientId string) ([]fruititem.FruitItem, bool) {
-	accumulator.mutex.RLock()
-	defer accumulator.mutex.RUnlock()
+// Suma a el conteo de peers para un cliente,
+// y devuelve los items a enviar al aggregador si se alcanzó el total esperado
+func (accumulator *Accumulator) AddPeerCount(clientId string, count int) []fruititem.FruitItem {
+	accumulator.mutex.Lock()
+	defer accumulator.mutex.Unlock()
 
-	clientMap, ok := accumulator.clientMaps[clientId]
-	if !ok {
-		return nil, false
+	state := accumulator.getClientState(clientId)
+	state.peerCount += count
+	if state.isReadyToFlush() {
+		return state.takeItems()
 	}
-
-	fruitItems := make([]fruititem.FruitItem, 0, len(clientMap))
-	for _, item := range clientMap {
-		fruitItems = append(fruitItems, item.FruitItem)
-	}
-
-	return fruitItems, true
-}
-
-func (accumulator *Accumulator) GetClientFruitCounter(clientId string) ([]FruitCounter, bool) {
-	accumulator.mutex.RLock()
-	defer accumulator.mutex.RUnlock()
-
-	clientMap, ok := accumulator.clientMaps[clientId]
-	if !ok {
-		return nil, false
-	}
-
-	fruitCounters := make([]FruitCounter, 0, len(clientMap))
-	for _, fruitCounter := range clientMap {
-		fruitCounters = append(fruitCounters, *fruitCounter)
-	}
-	return fruitCounters, true
+	return nil
 }
 
 // Limpia la lista de clientes que ya enviaron EOF, se puede usar para liberar memoria
 // si se sabe que no van a volver a enviar registros
 // Metodo thread safe
-func (accumulator *Accumulator) CleanDoneClient(clientId string) {
+func (accumulator *Accumulator) CleanClient(clientId string) {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()
-	delete(accumulator.doneClients, clientId)
+	delete(accumulator.clients, clientId)
 }
