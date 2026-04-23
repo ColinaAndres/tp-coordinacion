@@ -254,7 +254,7 @@ func (sum *Sum) handleCommunicationMessage(clientId string, peerCount int) error
 
 func (sum *Sum) sendCountUpdateToPeers(clientId string, totalAdded int) error {
 	slog.Info("Notifying other sum nodes about new count")
-	communicationMessage := inner.NewCommunicationMessage(clientId, totalAdded)
+	communicationMessage := inner.NewCommunicationMessage(clientId, sum.id, totalAdded)
 	message, err := inner.SerializeMessage(communicationMessage)
 	if err != nil {
 		slog.Debug("While serializing communication message", "err", err)

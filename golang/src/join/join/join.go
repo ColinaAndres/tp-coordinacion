@@ -4,11 +4,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sort"
 	"syscall"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruitmap"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
 )
@@ -28,14 +27,10 @@ type JoinConfig struct {
 type Join struct {
 	inputQueue        middleware.Middleware
 	outputQueue       middleware.Middleware
-	accumulator       *accumulator.Accumulator
-	states            map[string]*JoinState
+	fruitMaps         map[string]*fruitmap.FruitMap
+	clientsEOF        map[string]int
 	aggregationAmount int
 	topSize           int
-}
-
-type JoinState struct {
-	EOFCount int
 }
 
 func NewJoin(config JoinConfig) (*Join, error) {
@@ -55,8 +50,8 @@ func NewJoin(config JoinConfig) (*Join, error) {
 	return &Join{
 		inputQueue:        inputQueue,
 		outputQueue:       outputQueue,
-		accumulator:       accumulator.NewAccumulator(),
-		states:            map[string]*JoinState{},
+		fruitMaps:         map[string]*fruitmap.FruitMap{},
+		clientsEOF:        map[string]int{},
 		aggregationAmount: config.AggregationAmount,
 		topSize:           config.TopSize,
 	}, nil
@@ -73,8 +68,6 @@ func (join *Join) Run() {
 }
 
 func (join *Join) handleMessage(msg middleware.Message, ack func(), nack func()) {
-	defer ack()
-
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
@@ -86,29 +79,50 @@ func (join *Join) handleMessage(msg middleware.Message, ack func(), nack func())
 		if err := join.handleEndOfRecordsMessage(innerMessage.ClientId); err != nil {
 			slog.Error("While handling end of records message", "err", err)
 			nack()
+			return
 		}
+		ack()
 		return
 	}
 
 	join.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords)
+	ack()
 }
 
 func (join *Join) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
-	join.accumulator.AddFruitItems(clientId, fruitRecords)
+	clientMap, ok := join.fruitMaps[clientId]
+	if !ok {
+		clientMap = fruitmap.NewFruitMap()
+		join.fruitMaps[clientId] = clientMap
+	}
+	clientMap.Add(fruitRecords)
 }
 
 func (join *Join) handleEndOfRecordsMessage(clientId string) error {
 	slog.Info("Received EOF message from client", "clientId", clientId)
-	state := join.getState(clientId)
-	state.EOFCount++
-	if state.EOFCount != join.aggregationAmount {
-		return nil
+	clientEOFCount, ok := join.clientsEOF[clientId]
+	if !ok {
+		clientEOFCount = 0
+		join.clientsEOF[clientId] = clientEOFCount
 	}
-	delete(join.states, clientId)
 
-	fruitItems, _ := join.accumulator.RemoveClientFruitItems(clientId)
-	fruitTopRecords := buildFruitTop(fruitItems, join.topSize)
+	join.clientsEOF[clientId] = clientEOFCount + 1
+	if join.clientsEOF[clientId] == join.aggregationAmount {
+		return join.sendTop(clientId)
+	}
+	return nil
+}
 
+func (join *Join) buildFruitTop(clientId string) []fruititem.FruitItem {
+	fruitMap, ok := join.fruitMaps[clientId]
+	if !ok {
+		return []fruititem.FruitItem{}
+	}
+	return fruitMap.Top(join.topSize)
+}
+
+func (join *Join) sendTop(clientId string) error {
+	fruitTopRecords := join.buildFruitTop(clientId)
 	innerMessageWithTop := inner.NewDataMessage(clientId, fruitTopRecords)
 	message, err := inner.SerializeMessage(innerMessageWithTop)
 	if err != nil {
@@ -119,38 +133,7 @@ func (join *Join) handleEndOfRecordsMessage(clientId string) error {
 		slog.Debug("While sending top message", "err", err)
 		return err
 	}
-
-	eofMessage := inner.NewEOFMessage(clientId, 0)
-	message, err = inner.SerializeMessage(eofMessage)
-	if err != nil {
-		slog.Debug("While serializing EOF message", "err", err)
-		return err
-	}
-	if err := join.outputQueue.Send(*message); err != nil {
-		slog.Debug("While sending EOF message", "err", err)
-		return err
-	}
-
 	return nil
-}
-
-func buildFruitTop(fruitItems []fruititem.FruitItem, topSize int) []fruititem.FruitItem {
-	sort.SliceStable(fruitItems, func(i, j int) bool {
-		return fruitItems[j].Less(fruitItems[i])
-	})
-
-	finalTopSize := min(topSize, len(fruitItems))
-	return fruitItems[:finalTopSize]
-}
-
-func (join *Join) getState(clientId string) *JoinState {
-	state, exists := join.states[clientId]
-	if !exists {
-		state = &JoinState{}
-		join.states[clientId] = state
-	}
-
-	return state
 }
 
 func (join *Join) Close() {

@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sort"
 	"syscall"
 
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruitmap"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
 )
@@ -26,15 +26,12 @@ type AggregationConfig struct {
 }
 
 type Aggregation struct {
-	outputQueue           middleware.Middleware
-	inputExchange         middleware.Middleware
-	sumExchange           middleware.Middleware
-	aggrExchange          middleware.Middleware
-	communicationExchange middleware.Middleware
-	fruitMaps             map[string]*FruitMap
-	stateManager          *StateManager
-	sumAmount             int
-	topSize               int
+	outputQueue   middleware.Middleware
+	inputExchange middleware.Middleware
+	fruitMaps     map[string]*fruitmap.FruitMap
+	clientsEOF    map[string]int
+	sumAmount     int
+	topSize       int
 }
 
 func NewAggregation(config AggregationConfig) (*Aggregation, error) {
@@ -52,47 +49,12 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 		return nil, err
 	}
 
-	sumExchangeRouteKeys := []string{config.SumPrefix}
-	sumExchange, err := middleware.CreateExchangeMiddleware(config.SumPrefix, sumExchangeRouteKeys, connSettings)
-	if err != nil {
-		outputQueue.Close()
-		inputExchange.Close()
-		return nil, err
-	}
-
-	communicationExchangeRouteKeys := []string{fmt.Sprintf("%s.%d", config.AggregationPrefix, config.Id)}
-	communicationExchange, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, communicationExchangeRouteKeys, connSettings)
-	if err != nil {
-		outputQueue.Close()
-		inputExchange.Close()
-		sumExchange.Close()
-		return nil, err
-	}
-
-	aggExchangeRouteKeys := make([]string, config.AggregationAmount-1)
-	for i := range aggExchangeRouteKeys {
-		if i >= config.Id {
-			aggExchangeRouteKeys[i] = fmt.Sprintf("%s.%d", config.AggregationPrefix, i+1)
-		} else {
-			aggExchangeRouteKeys[i] = fmt.Sprintf("%s.%d", config.AggregationPrefix, i)
-		}
-	}
-
-	aggrExchange, err := middleware.CreateExchangeMiddleware(config.AggregationPrefix, aggExchangeRouteKeys, connSettings)
-	if err != nil {
-		outputQueue.Close()
-		inputExchange.Close()
-		sumExchange.Close()
-		communicationExchange.Close()
-		return nil, err
-	}
-
 	return &Aggregation{
 		outputQueue:   outputQueue,
 		inputExchange: inputExchange,
-		fruitMaps:     map[string]*FruitMap{},
+		fruitMaps:     map[string]*fruitmap.FruitMap{},
+		clientsEOF:    map[string]int{},
 		sumAmount:     config.SumAmount,
-		clientsEOF:    map[string]int,
 		topSize:       config.TopSize,
 	}, nil
 }
@@ -131,25 +93,35 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message", "clientId", clientId, "total de registros", totalFruitSend)
 
-	aggregation.ClientsEOF[clientId]++
-	if aggregation.ClientsEOF[clientId] == aggregation.sumAmount {
+	clientEOFCount, ok := aggregation.clientsEOF[clientId]
+	if !ok {
+		clientEOFCount = 0
+		aggregation.clientsEOF[clientId] = clientEOFCount
+	}
+
+	aggregation.clientsEOF[clientId] = clientEOFCount + 1
+
+	if aggregation.clientsEOF[clientId] == aggregation.sumAmount {
 		return aggregation.sendTop(clientId)
 	}
 	return nil
 }
 
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem, totalFruitSend int) {
-	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
+	clientMap, ok := aggregation.fruitMaps[clientId]
+	if !ok {
+		clientMap = fruitmap.NewFruitMap()
+		aggregation.fruitMaps[clientId] = clientMap
+	}
+	clientMap.Add(fruitRecords)
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
-	// TODO: podria devolver nil y false si no existe el cliente, revisar si es necesario
-	fruitItems, _ := aggregation.accumulator.GetClientFruitItems(clientId)
-	sort.SliceStable(fruitItems, func(i, j int) bool {
-		return fruitItems[j].Less(fruitItems[i])
-	})
-	finalTopSize := min(aggregation.topSize, len(fruitItems))
-	return fruitItems[:finalTopSize]
+	fruitMap, ok := aggregation.fruitMaps[clientId]
+	if !ok {
+		return []fruititem.FruitItem{}
+	}
+	return fruitMap.Top(aggregation.topSize)
 }
 
 func (aggregation *Aggregation) sendTop(clientId string) error {
@@ -176,16 +148,13 @@ func (aggregation *Aggregation) sendTop(clientId string) error {
 		return err
 	}
 
-	aggregation.accumulator.RemoveClientFruitItems(clientId)
+	delete(aggregation.fruitMaps, clientId)
 	return nil
 }
 
 func (aggregation *Aggregation) Close() {
 	aggregation.outputQueue.Close()
 	aggregation.inputExchange.Close()
-	aggregation.sumExchange.Close()
-	aggregation.communicationExchange.Close()
-	aggregation.aggrExchange.Close()
 }
 
 func (aggregation *Aggregation) handleSignal() {

@@ -80,16 +80,13 @@ func NewEOFMessage(clientId string, totalFruitSend int) InnerMessage {
 	}
 }
 
-func NewCommunicationMessage(clientId string, clientCount int) InnerMessage {
+func NewCommunicationMessage(clientId string, senderId int, clientCount int) InnerMessage {
 	return InnerMessage{
 		ClientId:       clientId,
+		SenderId:       senderId,
 		IsEOF:          false,
 		IsCleanUp:      false,
 		TotalFruitSend: clientCount,
 		FruitRecords:   []fruititem.FruitItem{},
 	}
-}
-
-func NewComunicationMessage(clientId string, clientCount int) InnerMessage {
-	return NewCommunicationMessage(clientId, clientCount)
 }
