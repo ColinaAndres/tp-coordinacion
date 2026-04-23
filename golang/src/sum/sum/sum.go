@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/accumulator"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/messageprotocol/inner"
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/middleware"
@@ -30,7 +29,7 @@ type Sum struct {
 	inputQueue            middleware.Middleware
 	outputExchanges       []middleware.Middleware
 	communicationExchange middleware.Middleware
-	accumulator           *accumulator.Accumulator
+	accumulator           *Accumulator
 }
 
 func NewSum(config SumConfig) (*Sum, error) {
@@ -74,7 +73,7 @@ func NewSum(config SumConfig) (*Sum, error) {
 		inputQueue:            inputQueue,
 		outputExchanges:       outputExchanges,
 		communicationExchange: communicationExchange,
-		accumulator:           accumulator.NewAccumulator(),
+		accumulator:           NewAccumulator(),
 	}, nil
 }
 

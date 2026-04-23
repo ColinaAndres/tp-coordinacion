@@ -1,4 +1,4 @@
-package accumulator
+package sum
 
 import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
