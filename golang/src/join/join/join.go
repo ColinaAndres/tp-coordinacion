@@ -106,10 +106,13 @@ func (join *Join) sendTop(clientId string, top []fruititem.FruitItem) error {
 		slog.Debug("While sending top message", "err", err)
 		return err
 	}
+
+	join.topAggregator.CleanClient(clientId)
 	return nil
 }
 
 func (join *Join) Close() {
+	join.topAggregator.CleanAll()
 	join.inputQueue.Close()
 	join.outputQueue.Close()
 }

@@ -48,7 +48,13 @@ func (ta *TopAggregator) RegisterEOF(clientId string) []fruititem.FruitItem {
 }
 
 // Clean libera la memoria del cliente.
-func (ta *TopAggregator) Clean(clientId string) {
+func (ta *TopAggregator) CleanClient(clientId string) {
 	delete(ta.fruitMaps, clientId)
 	delete(ta.clientsEOF, clientId)
+}
+
+// Libera memoria de todos los clientes
+func (ta *TopAggregator) CleanAll() {
+	ta.fruitMaps = map[string]*fruitmap.FruitMap{}
+	ta.clientsEOF = map[string]int{}
 }

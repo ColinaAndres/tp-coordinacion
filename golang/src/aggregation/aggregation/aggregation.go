@@ -120,12 +120,12 @@ func (aggregation *Aggregation) sendTop(clientId string, top []fruititem.FruitIt
 		return err
 	}
 
-	aggregation.topAggregator.Clean(clientId)
+	aggregation.topAggregator.CleanClient(clientId)
 	return nil
 }
 
 func (aggregation *Aggregation) Close() {
-	//clean all?
+	aggregation.topAggregator.CleanAll()
 	aggregation.outputQueue.Close()
 	aggregation.inputExchange.Close()
 }

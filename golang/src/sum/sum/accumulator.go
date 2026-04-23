@@ -99,3 +99,9 @@ func (accumulator *Accumulator) CleanClient(clientId string) {
 	defer accumulator.mutex.Unlock()
 	delete(accumulator.clients, clientId)
 }
+
+func (accumulator *Accumulator) CleanAll() {
+	accumulator.mutex.Lock()
+	defer accumulator.mutex.Unlock()
+	accumulator.clients = map[string]*clientState{}
+}

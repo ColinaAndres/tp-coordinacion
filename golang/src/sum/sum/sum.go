@@ -248,6 +248,7 @@ func (sum *Sum) sendCountUpdateToPeers(clientId string, totalAdded int) error {
 
 // Close cierra todos los recursos
 func (sum *Sum) Close() {
+	sum.accumulator.CleanAll()
 	sum.inputQueue.Close()
 	for _, exchange := range sum.outputExchanges {
 		exchange.Close()
