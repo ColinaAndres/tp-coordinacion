@@ -110,7 +110,9 @@ Al recibir el mensaje que contiene la cantidad de registros procesados por otro 
 Finalmente en el momento en el que el conteo local y el conteo de peers sea igual a la totalidad de registros enviados del cliente, se pasa a la fase de envio a los nodos de Aggregacion
 
 #### Manejo de Race Conditions
-Ya que los nodos Suma tienen dos go routines, Puede pasar el caso de que se procesa un mensaje de EOF sin haber terminado de procesar los mensajes de datos, Para ello se abstrajo la logica de conteo y procesamiento de registros en una Struct Accumulator el cual internamente asegura atomicidad de las operaciones a traves de un Mutex.  
+Ya que los nodos Suma tienen dos go routines, Pueden haber race conditions, para ello se abstrajo la logica de conteo y procesamiento de registros en una Struct Accumulator el cual internamente asegura atomicidad de las operaciones a traves de un Mutex. Una vez que el Accumulador detecte que se termino de procesar todos los datos de un cliente, los devuelve atomicamente y los nodos Sum pasan automaticamente a enviarlos.
+
+En el caso borde en que se haya procesado un mensaje de EOF antes de terminar de procesar un mensaaje de datos, el Accumulator va a procesar los datos con normalidad pero tambien le indicara al nodo Sum que el cliente ya fue marcado como done y por ende debe manejar esos datos nuevos registrados notificandole sus pares la nueva cantidad sumada. 
 
 ### Coordinacion entre nodos Sum y Aggregation
 
