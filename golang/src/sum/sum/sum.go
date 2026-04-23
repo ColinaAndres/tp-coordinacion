@@ -83,7 +83,7 @@ func (sum *Sum) Run() {
 	go sum.handleSignal()
 
 	go sum.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
-		sum.handleCommunication(msg, ack, nack)
+		sum.handleMessage(msg, ack, nack)
 	})
 
 	sum.inputQueue.StartConsuming(func(msg middleware.Message, ack, nack func()) {
@@ -99,25 +99,16 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 		return
 	}
 
-	if innerMessage.IsEOFMessage() {
-		if err := sum.notifyEOF(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-			slog.Error("While notifying EOF to other sum nodes", "err", err)
-			nack()
-			return
-		}
-		ack()
-		return
-	}
-
-	if err := sum.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords); err != nil {
-		slog.Error("While handling data message", "err", err)
+	if err := innerMessage.Execute(sum); err != nil {
+		slog.Error("While executing message", "err", err)
 		nack()
 		return
 	}
+
 	ack()
 }
 
-func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
+func (sum *Sum) HandleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
 	clientDone, totalAdded, itemsToFlush := sum.accumulator.AddFruitItems(clientId, fruitRecords)
 	if clientDone {
 		if err := sum.sendCountUpdateToPeers(clientId, totalAdded); err != nil {
@@ -125,14 +116,14 @@ func (sum *Sum) handleDataMessage(clientId string, fruitRecords []fruititem.Frui
 		}
 	}
 	if itemsToFlush != nil {
-		return sum.handleEndOfRecordMessage(clientId, totalAdded, itemsToFlush)
+		return sum.sendProcessedData(clientId, itemsToFlush)
 	}
 	return nil
 }
 
-func (sum *Sum) notifyEOF(clientId string, totalFruitSended int) error {
+func (sum *Sum) HandleEOFMessage(clientId string, totalFruitSended int) error {
 	slog.Info("Notifying other sum nodes about EOF")
-	eofMessage := inner.NewEOFMessage(clientId, totalFruitSended)
+	eofMessage := inner.NewBroadcastEOFMessage(clientId, totalFruitSended)
 	message, err := inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)
@@ -145,8 +136,8 @@ func (sum *Sum) notifyEOF(clientId string, totalFruitSended int) error {
 	return nil
 }
 
-func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int, itemsToFlush []fruititem.FruitItem) error {
-	slog.Info("Received End Of Records message")
+func (sum *Sum) sendProcessedData(clientId string, itemsToFlush []fruititem.FruitItem) error {
+	slog.Info("Sending processed data to aggregation nodes")
 
 	for _, fruitItem := range itemsToFlush {
 		fruitRecord := []fruititem.FruitItem{fruitItem}
@@ -168,12 +159,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int, it
 	}
 
 	for _, exchange := range sum.outputExchanges {
-		eofMessage := inner.InnerMessage{
-			ClientId:       clientId,
-			IsEOF:          true,
-			TotalFruitSend: totalFruitSend,
-			FruitRecords:   []fruititem.FruitItem{},
-		}
+		eofMessage := inner.NewEOFMessage(clientId, len(itemsToFlush))
 
 		message, err := inner.SerializeMessage(eofMessage)
 		if err != nil {
@@ -191,43 +177,7 @@ func (sum *Sum) handleEndOfRecordMessage(clientId string, totalFruitSend int, it
 	return nil
 }
 
-func (sum *Sum) handleCommunication(msg middleware.Message, ack func(), nack func()) {
-	slog.Info("Received message from communication exchange")
-	innerMessage, err := inner.DeserializeMessage(&msg)
-	if err != nil {
-		slog.Error("While deserializing message", "err", err)
-		nack()
-		return
-	}
-
-	if innerMessage.IsEOFMessage() {
-		slog.Info("Received EOF message")
-
-		if err := sum.handleEOFfromCommunication(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-			slog.Error("While handling end of record message", "err", err)
-			nack()
-			return
-		}
-		ack()
-		return
-	}
-
-	if innerMessage.IsCommunicationMessage() && innerMessage.SenderId == sum.id {
-		slog.Info("Received own communication message, ignoring")
-		ack()
-		return
-	}
-
-	if err := sum.handleCommunicationMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-		slog.Error("Received communication message, but no handler for it")
-		nack()
-		return
-	}
-
-	ack()
-}
-
-func (sum *Sum) handleEOFfromCommunication(clientId string, totalFruitSended int) error {
+func (sum *Sum) HandleBroadcastEOFMessage(clientId string, totalFruitSended int) error {
 	slog.Info("Handling EOF message from communication exchange")
 	totalReceived, itemsToFlush := sum.accumulator.MarkClientAsDone(clientId, totalFruitSended)
 
@@ -236,19 +186,24 @@ func (sum *Sum) handleEOFfromCommunication(clientId string, totalFruitSended int
 	}
 
 	if itemsToFlush != nil {
-		return sum.handleEndOfRecordMessage(clientId, totalFruitSended, itemsToFlush)
+		return sum.sendProcessedData(clientId, itemsToFlush)
 	}
 	return nil
 }
 
-func (sum *Sum) handleCommunicationMessage(clientId string, peerCount int) error {
+func (sum *Sum) HandleCommunicationMessage(clientId string, peerCount int) error {
 	slog.Info("Handling communication message from communication exchange")
 	itemsToFlush := sum.accumulator.AddPeerCount(clientId, peerCount)
 
 	if itemsToFlush != nil {
-		return sum.handleEndOfRecordMessage(clientId, 0, itemsToFlush) // no deberia ser relevante el segundo paramtero
+		return sum.sendProcessedData(clientId, itemsToFlush)
 	}
 	return nil
+}
+
+// Funcion necesaria para implementar CommunicationHandler, no se usa directamente
+func (sum *Sum) Id() int {
+	return sum.id
 }
 
 func (sum *Sum) sendCountUpdateToPeers(clientId string, totalAdded int) error {

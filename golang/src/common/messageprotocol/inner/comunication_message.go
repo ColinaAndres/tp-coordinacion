@@ -1,7 +1,8 @@
 package inner
 
 type CommunicationHandler interface {
-	HandleCommunicationMessage(clientId string, senderId int, count int) error
+	HandleCommunicationMessage(clientId string, count int) error
+	Id() int
 }
 
 type CommunicationMessage struct {
@@ -15,5 +16,8 @@ func NewCommunicationMessage(clientId string, senderId int, count int) *Communic
 }
 
 func (m *CommunicationMessage) Execute(handler any) error {
-	return handler.(CommunicationHandler).HandleCommunicationMessage(m.clientId, m.senderId, m.count)
+	if handler.(CommunicationHandler).Id() == m.senderId {
+		return nil
+	}
+	return handler.(CommunicationHandler).HandleCommunicationMessage(m.clientId, m.count)
 }

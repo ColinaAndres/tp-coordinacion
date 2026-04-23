@@ -71,25 +71,22 @@ func (join *Join) handleMessage(msg middleware.Message, ack func(), nack func())
 		return
 	}
 
-	if innerMessage.IsEOFMessage() {
-		if err := join.handleEndOfRecordsMessage(innerMessage.ClientId); err != nil {
-			slog.Error("While handling end of records message", "err", err)
-			nack()
-			return
-		}
-		ack()
+	if err := innerMessage.Execute(join); err != nil {
+		slog.Error("While executing message", "err", err)
+		nack()
 		return
 	}
 
-	join.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords)
 	ack()
 }
 
-func (join *Join) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) {
+// Handler que maneja los mensajes de datos, nunca devuelve error pero la interfaz si lo pide.
+func (join *Join) HandleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
 	join.topAggregator.Add(clientId, fruitRecords)
+	return nil
 }
 
-func (join *Join) handleEndOfRecordsMessage(clientId string) error {
+func (join *Join) HandleEOFMessage(clientId string, _totalFruitSended int) error {
 	slog.Info("Received EOF message")
 	top := join.topAggregator.RegisterEOF(clientId)
 	if top != nil {

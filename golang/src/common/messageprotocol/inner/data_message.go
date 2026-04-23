@@ -18,3 +18,11 @@ func NewDataMessage(clientId string, fruitItems []fruititem.FruitItem) *DataMess
 func (m *DataMessage) Execute(handler any) error {
 	return handler.(DataHandler).HandleDataMessage(m.clientId, m.fruitItems)
 }
+
+func (m *DataMessage) ClientId() string {
+	return m.clientId
+}
+
+func (m *DataMessage) FruitRecords() []fruititem.FruitItem {
+	return m.fruitItems
+}

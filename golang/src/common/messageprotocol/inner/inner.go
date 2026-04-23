@@ -43,6 +43,9 @@ func SerializeMessage(msg InnerMessage) (*middleware.Message, error) {
 	case *CommunicationMessage:
 		kind = MessageKindCommunication
 		payload = communicationPayload{ClientId: m.clientId, SenderId: m.senderId, Count: m.count}
+	case *BroadcastEOFMessage:
+		kind = MessageKindBroadcastEOF
+		payload = eofPayload{ClientId: m.clientId, TotalFruitSend: m.totalFruitSend}
 	default:
 		return nil, fmt.Errorf("unknown message type: %T", msg)
 	}
@@ -87,6 +90,12 @@ func DeserializeMessage(msg *middleware.Message) (InnerMessage, error) {
 			return nil, err
 		}
 		return NewCommunicationMessage(payload.ClientId, payload.SenderId, payload.Count), nil
+	case MessageKindBroadcastEOF:
+		var payload eofPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			return nil, err
+		}
+		return NewBroadcastEOFMessage(payload.ClientId, payload.TotalFruitSend), nil
 	default:
 		return nil, fmt.Errorf("unknown message kind: %s", env.Kind)
 	}

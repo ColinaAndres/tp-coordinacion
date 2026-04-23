@@ -73,20 +73,16 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 		return
 	}
 
-	if innerMessage.IsEOFMessage() {
-		if err := aggregation.handleEndOfRecordsMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
-			slog.Error("While handling end of record message", "err", err)
-			nack()
-			return
-		}
-		ack()
+	if err := innerMessage.Execute(aggregation); err != nil {
+		slog.Error("While executing message", "err", err)
+		nack()
 		return
 	}
 
-	aggregation.handleDataMessage(innerMessage.ClientId, innerMessage.FruitRecords, innerMessage.TotalFruitSend)
+	ack()
 }
 
-func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
+func (aggregation *Aggregation) HandleEOFMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received EOF message")
 	top := aggregation.topAggregator.RegisterEOF(clientId)
 	if top != nil {
@@ -95,8 +91,10 @@ func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, total
 	return nil
 }
 
-func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem, totalFruitSend int) {
+// Handler que maneja los mensajes de datos, nunca devuelve error pero la interfaz si lo pide.
+func (aggregation *Aggregation) HandleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
 	aggregation.topAggregator.Add(clientId, fruitRecords)
+	return nil
 }
 
 func (aggregation *Aggregation) sendTop(clientId string, top []fruititem.FruitItem) error {
@@ -111,7 +109,7 @@ func (aggregation *Aggregation) sendTop(clientId string, top []fruititem.FruitIt
 		return err
 	}
 
-	eofMessage := inner.NewEOFMessage(clientId, 0)
+	eofMessage := inner.NewEOFMessage(clientId, len(top))
 	message, err = inner.SerializeMessage(eofMessage)
 	if err != nil {
 		slog.Debug("While serializing EOF message", "err", err)

@@ -52,10 +52,17 @@ func (messageHandler *MessageHandler) DeserializeResultMessage(message *middlewa
 		return nil, err
 	}
 
-	if innerMessage.ClientId != messageHandler.clientId {
+	// Como no puedo cambiar el gateway, toca hacer el casteo a mano, no puedo hacer Execute
+	dataMsg, ok := innerMessage.(*inner.DataMessage)
+	if !ok {
 		return nil, nil
 	}
-	return innerMessage.FruitRecords, nil
+
+	if dataMsg.ClientId() != messageHandler.clientId {
+		return nil, nil
+	}
+
+	return dataMsg.FruitRecords(), nil
 }
 
 // Crea un ID tipo timestamp con cierto desfase para evitar colisiones entre clientes
