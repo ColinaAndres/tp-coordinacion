@@ -6,6 +6,8 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 )
 
+// FruitMap es una estructura que encapsula un mapa de frutas,
+// Tiene la responsabilidad de acmuluar los registros, devolverlo y realizar top n de frutas.
 type FruitMap struct {
 	fruitItems map[string]fruititem.FruitItem
 }

@@ -2,10 +2,15 @@ package sum
 
 import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
+	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruitmap"
+)
+
+const (
+	defaultTotalExpected = -1
 )
 
 type clientState struct {
-	fruitItems    map[string]fruititem.FruitItem
+	fruitItems    *fruitmap.FruitMap
 	ownCount      int
 	peerCount     int
 	totalExpected int  // -1 = EOF aún no llegó
@@ -14,38 +19,31 @@ type clientState struct {
 
 func newClientState() *clientState {
 	return &clientState{
-		fruitItems:    map[string]fruititem.FruitItem{},
-		totalExpected: -1,
+		fruitItems:    fruitmap.NewFruitMap(),
+		ownCount:      0,
+		peerCount:     0,
+		totalExpected: defaultTotalExpected,
+		flushed:       false,
 	}
 }
 
 func (cs *clientState) addItems(fruitItems []fruititem.FruitItem) {
-	for _, fruitItem := range fruitItems {
-		_, ok := cs.fruitItems[fruitItem.Fruit]
-		if ok {
-			cs.fruitItems[fruitItem.Fruit] = cs.fruitItems[fruitItem.Fruit].Sum(fruitItem)
-		} else {
-			cs.fruitItems[fruitItem.Fruit] = fruitItem
-		}
-	}
+	cs.fruitItems.Add(fruitItems)
 }
 
 func (cs *clientState) isReadyToFlush() bool {
 	return !cs.flushed &&
-		cs.totalExpected >= 0 &&
+		cs.totalExpected > defaultTotalExpected &&
 		cs.ownCount+cs.peerCount == cs.totalExpected
 }
 
 func (cs *clientState) takeItems() []fruititem.FruitItem {
-	items := make([]fruititem.FruitItem, 0, len(cs.fruitItems))
-	for _, item := range cs.fruitItems {
-		items = append(items, item)
-	}
+	items := cs.fruitItems.Take()
 	cs.fruitItems = nil
 	cs.flushed = true
 	return items
 }
 
 func (cs *clientState) isClosing() bool {
-	return cs.totalExpected >= 0
+	return cs.totalExpected > defaultTotalExpected
 }

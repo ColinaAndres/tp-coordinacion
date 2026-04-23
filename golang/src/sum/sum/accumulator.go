@@ -6,6 +6,11 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-coordinacion/common/fruititem"
 )
 
+// Clase Accumulator se encarga de acumular los registros de fruta recibidos de los clientes,
+// y de determinar cuándo se alcanzó el total esperado para enviar los resultados a los nodos de agregación.
+// Mantiene un estado por cliente, que incluye la cantidad de registros recibidos, la cantidad de peers que reportaron conteo,
+// y el total esperado (que se actualiza al recibir un EOF).
+// El Accumulator es thread safe, ya que puede ser accedido por múltiples goroutines que manejan los mensajes recibidos.
 type Accumulator struct {
 	clients map[string]*clientState
 	mutex   sync.Mutex
@@ -33,7 +38,7 @@ func (accumulator *Accumulator) getClientState(clientId string) *clientState {
 // Devuelve:
 // - closing: true si el cliente ya envió EOF, false en caso contrario
 // - newCount: cantidad de registros agregados al acumulador
-// - itemsToFlush: lista de items a enviar al peer, si el cliente ya envió EOF y se alcanzó el total esperado, nil en caso contrario
+// - itemsToFlush: lista de items a enviar, si el cliente ya envió EOF y se alcanzó el total esperado, nil en caso contrario
 // Metodo thread safe
 func (accumulator *Accumulator) AddFruitItems(clientId string, fruitItems []fruititem.FruitItem) (closing bool, newCount int, itemsToFlush []fruititem.FruitItem) {
 	accumulator.mutex.Lock()
@@ -54,6 +59,7 @@ func (accumulator *Accumulator) AddFruitItems(clientId string, fruitItems []frui
 
 // Marca que el cliente ya envio EOF, y devuelve la cantidad de registros que se analizaron para el cliente,
 // y los items a enviar al aggregador si se alcanzó el total esperado
+// Metodo thread safe
 func (accumulator *Accumulator) MarkClientAsDone(clientId string, totalExpected int) (ownCount int, itemsToFlush []fruititem.FruitItem) {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()
@@ -72,6 +78,7 @@ func (accumulator *Accumulator) MarkClientAsDone(clientId string, totalExpected 
 
 // Suma a el conteo de peers para un cliente,
 // y devuelve los items a enviar al aggregador si se alcanzó el total esperado
+// Metodo thread safe
 func (accumulator *Accumulator) AddPeerCount(clientId string, count int) []fruititem.FruitItem {
 	accumulator.mutex.Lock()
 	defer accumulator.mutex.Unlock()

@@ -91,6 +91,8 @@ func (sum *Sum) Run() {
 	})
 }
 
+// handleMessage hace un dispatch del mensaje recibido al handler correspondiente
+// si hubo algun error se hace nack del mensaje, sino se hace ack
 func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
@@ -108,6 +110,10 @@ func (sum *Sum) handleMessage(msg middleware.Message, ack func(), nack func()) {
 	ack()
 }
 
+// HandleDataMessage maneja los mensajes de datos recibidos,
+// agregando los registros al acumulado,
+// Si el cliente ya fue marcado como done, se notifica a los peers sobre el nuevo total agregado
+// Si el cliente alcanza el total esperado, se envía el resultado a los nodos de agregación
 func (sum *Sum) HandleDataMessage(clientId string, fruitRecords []fruititem.FruitItem) error {
 	clientDone, totalAdded, itemsToFlush := sum.accumulator.AddFruitItems(clientId, fruitRecords)
 	if clientDone {
@@ -121,6 +127,7 @@ func (sum *Sum) HandleDataMessage(clientId string, fruitRecords []fruititem.Frui
 	return nil
 }
 
+// HandleEOFMessage se encarga de avisar a todos los Sum que llego un EOF
 func (sum *Sum) HandleEOFMessage(clientId string, totalFruitSended int) error {
 	slog.Info("Notifying other sum nodes about EOF")
 	eofMessage := inner.NewBroadcastEOFMessage(clientId, totalFruitSended)
@@ -136,6 +143,9 @@ func (sum *Sum) HandleEOFMessage(clientId string, totalFruitSended int) error {
 	return nil
 }
 
+// sendProcessedData envia los datos correspondientes a cada nodo de agregacion,
+// El exchange se elige en base a un hash del nombre de la fruta para asegurar que todas
+// las frutas del mismo tipo vayan al mismo nodo de agregacion
 func (sum *Sum) sendProcessedData(clientId string, itemsToFlush []fruititem.FruitItem) error {
 	slog.Info("Sending processed data to aggregation nodes")
 
@@ -177,6 +187,9 @@ func (sum *Sum) sendProcessedData(clientId string, itemsToFlush []fruititem.Frui
 	return nil
 }
 
+// HandleBroadcastEOFMessage maneja los mensajes de EOF recibidos de otros nodos de sum (podria ser del mismo sum)
+// Se envia a los peers la cantidad analizada por el nodo al momento del llamado
+// Si el cliente alcanza el total esperado, se envía el resultado a los nodos de agregación
 func (sum *Sum) HandleBroadcastEOFMessage(clientId string, totalFruitSended int) error {
 	slog.Info("Handling EOF message from communication exchange")
 	totalReceived, itemsToFlush := sum.accumulator.MarkClientAsDone(clientId, totalFruitSended)
@@ -191,6 +204,9 @@ func (sum *Sum) HandleBroadcastEOFMessage(clientId string, totalFruitSended int)
 	return nil
 }
 
+// HandleCommunicationMessage maneja los mensajes de comunicación recibidos de otros nodos de sum
+// Se actualiza el contador de mensajes analizados por otros nosdos suma
+// Si el cliente alcanza el total esperado, se envía el resultado a los nodos de agregación
 func (sum *Sum) HandleCommunicationMessage(clientId string, peerCount int) error {
 	slog.Info("Handling communication message from communication exchange")
 	itemsToFlush := sum.accumulator.AddPeerCount(clientId, peerCount)
@@ -206,6 +222,7 @@ func (sum *Sum) Id() int {
 	return sum.id
 }
 
+// sendCountUpdateToPeers envia actualizaciones de conteo a los nodos de sum
 func (sum *Sum) sendCountUpdateToPeers(clientId string, totalAdded int) error {
 	slog.Info("Notifying other sum nodes about new count")
 	communicationMessage := inner.NewCommunicationMessage(clientId, sum.id, totalAdded)
@@ -221,6 +238,7 @@ func (sum *Sum) sendCountUpdateToPeers(clientId string, totalAdded int) error {
 	return nil
 }
 
+// Close cierra todos los recursos
 func (sum *Sum) Close() {
 	sum.inputQueue.Close()
 	for _, exchange := range sum.outputExchanges {
