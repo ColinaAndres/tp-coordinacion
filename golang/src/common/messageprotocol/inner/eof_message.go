@@ -1,7 +1,7 @@
 package inner
 
 type EOFHandler interface {
-	HandleEOF(clientId string, totalFruitSend int) error
+	HandleEOFMessage(clientId string, totalFruitSend int) error
 }
 
 type EOFMessage struct {
@@ -14,5 +14,5 @@ func NewEOFMessage(clientId string, totalFruitSend int) *EOFMessage {
 }
 
 func (m *EOFMessage) Execute(handler any) error {
-	return handler.(EOFHandler).HandleEOF(m.clientId, m.totalFruitSend)
+	return handler.(EOFHandler).HandleEOFMessage(m.clientId, m.totalFruitSend)
 }
