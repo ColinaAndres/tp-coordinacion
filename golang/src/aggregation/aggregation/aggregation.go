@@ -91,12 +91,9 @@ func NewAggregation(config AggregationConfig) (*Aggregation, error) {
 	return &Aggregation{
 		outputQueue:           outputQueue,
 		inputExchange:         inputExchange,
-		sumExchange:           sumExchange,
-		communicationExchange: communicationExchange,
-		aggrExchange:          aggrExchange,
-		accumulator:           accumulator.NewAccumulator(),
-		stateManager:          NewStateManager(config.SumAmount),
+		accumulator:           //Objeto que encapsule tenga logica de sumado mas tops,
 		sumAmount:             config.SumAmount,
+		clientsEOF:			  map[string]int,	
 		topSize:               config.TopSize,
 	}, nil
 }
@@ -106,18 +103,12 @@ func (aggregation *Aggregation) Run() {
 
 	go aggregation.handleSignal()
 
-	go aggregation.communicationExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
-		aggregation.handleComunication(msg, ack, nack)
-	})
-
 	aggregation.inputExchange.StartConsuming(func(msg middleware.Message, ack, nack func()) {
 		aggregation.handleMessage(msg, ack, nack)
 	})
 }
 
 func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func(), nack func()) {
-	defer ack()
-
 	innerMessage, err := inner.DeserializeMessage(&msg)
 	if err != nil {
 		slog.Error("While deserializing message", "err", err)
@@ -129,7 +120,9 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 		if err := aggregation.handleEndOfRecordsMessage(innerMessage.ClientId, innerMessage.TotalFruitSend); err != nil {
 			slog.Error("While handling end of record message", "err", err)
 			nack()
+			return
 		}
+		ack()
 		return
 	}
 
@@ -139,80 +132,15 @@ func (aggregation *Aggregation) handleMessage(msg middleware.Message, ack func()
 func (aggregation *Aggregation) handleEndOfRecordsMessage(clientId string, totalFruitSend int) error {
 	slog.Info("Received End Of Records message", "clientId", clientId, "total de registros", totalFruitSend)
 
-	aggregation.stateManager.MarkEOF(clientId, totalFruitSend)
-	if !aggregation.stateManager.DoneWaiting(clientId) {
-		return nil
+	aggregation.ClientsEOF[clientId]++
+	if aggregation.ClientsEOF[clientId] == aggregation.sumAmount {
+		return aggregation.sendTop(clientId)
 	}
-
-	aggregation.notifyClientCountUpdate(clientId, aggregation.stateManager.GetReceivedCount(clientId))
-
-	if aggregation.stateManager.DoneReceiving(clientId) {
-		slog.Info("LO recibido es igual al total en end of record handler, enviando top")
-		if err := aggregation.sendTop(clientId); err != nil {
-			slog.Error("While sending top message", "err", err)
-			return err
-		}
-	}
-	// if !(state.EOFcount == aggregation.sumAmount && state.ReceivedCount == state.TargetCounts) {
-	// 	return nil
-	// }
-
-	// cleanUpMessage := inner.InnerMessage{
-	// 	ClientId:       clientId,
-	// 	FruitRecords:   []fruititem.FruitItem{},
-	// 	IsEOF:          false,
-	// 	IsCleanUp:      true,
-	// 	TotalFruitSend: 0,
-	// }
-
-	// message, err := inner.SerializeMessage(cleanUpMessage)
-	// if err != nil {
-	// 	slog.Debug("While serializing clean up message", "err", err)
-	// 	return err
-	// }
-	// if err := aggregation.sumExchange.Send(*message); err != nil {
-	// 	slog.Debug("While sending clean up message", "err", err)
-	// 	return err
-	// }
-
-	// fruitTopRecords := aggregation.buildFruitTop(clientId)
-	// innerMessageWithTop := inner.NewInnerMessage(clientId, fruitTopRecords, false)
-	// message, err = inner.SerializeMessage(innerMessageWithTop)
-	// if err != nil {
-	// 	slog.Debug("While serializing top message", "err", err)
-	// 	return err
-	// }
-	// if err := aggregation.outputQueue.Send(*message); err != nil {
-	// 	slog.Debug("While sending top message", "err", err)
-	// 	return err
-	// }
-
-	// eofMessage := inner.NewInnerMessage(clientId, []fruititem.FruitItem{}, true)
-	// message, err = inner.SerializeMessage(eofMessage)
-	// if err != nil {
-	// 	slog.Debug("While serializing EOF message", "err", err)
-	// 	return err
-	// }
-	// if err := aggregation.outputQueue.Send(*message); err != nil {
-	// 	slog.Debug("While sending EOF message", "err", err)
-	// 	return err
-	// }
-
-	// aggregation.accumulator.RemoveClientFruitItems(clientId)
 	return nil
 }
 
 func (aggregation *Aggregation) handleDataMessage(clientId string, fruitRecords []fruititem.FruitItem, totalFruitSend int) {
 	aggregation.accumulator.AddFruitItems(clientId, fruitRecords)
-	aggregation.stateManager.AddLocalCount(clientId, totalFruitSend)
-
-	if aggregation.stateManager.DoneReceiving(clientId) {
-		slog.Info("NO DEBERIA ENTRAR AQUI, ES EL CASO BORDE")
-		aggregation.notifyClientCountUpdate(clientId, totalFruitSend)
-		if err := aggregation.sendTop(clientId); err != nil {
-			slog.Error("While sending top message", "err", err)
-		}
-	}
 }
 
 func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.FruitItem {
@@ -223,29 +151,6 @@ func (aggregation *Aggregation) buildFruitTop(clientId string) []fruititem.Fruit
 	})
 	finalTopSize := min(aggregation.topSize, len(fruitItems))
 	return fruitItems[:finalTopSize]
-}
-
-func (aggregation *Aggregation) handleComunication(msg middleware.Message, ack func(), nack func()) {
-	slog.Info("Received comunication message")
-
-	comunicationMessage, err := inner.DeserializeMessage(&msg)
-	if err != nil {
-		slog.Error("While deserializing comunication message", "err", err)
-		nack()
-		return
-	}
-
-	aggregation.handleClientCountUpdate(comunicationMessage.ClientId, comunicationMessage.TotalFruitSend)
-
-}
-
-func (aggregation *Aggregation) handleClientCountUpdate(clientId string, clientCount int) {
-	slog.Info("Handling client count update", "clientId", clientId, "clientCount", clientCount, "my count", aggregation.stateManager.GetReceivedCount(clientId))
-	aggregation.stateManager.AddPeersCount(clientId, clientCount)
-
-	if aggregation.stateManager.DoneReceiving(clientId) {
-		aggregation.sendTop(clientId)
-	}
 }
 
 func (aggregation *Aggregation) sendTop(clientId string) error {
@@ -273,23 +178,6 @@ func (aggregation *Aggregation) sendTop(clientId string) error {
 	}
 
 	aggregation.accumulator.RemoveClientFruitItems(clientId)
-	return nil
-}
-
-func (aggregation *Aggregation) notifyClientCountUpdate(clientId string, totalFruitReceived int) error {
-	slog.Info("Notificacion de cliente", "clientId", clientId, "totalFruitReceived", totalFruitReceived)
-	comunicationMessage := inner.NewCommunicationMessage(clientId, totalFruitReceived)
-	message, err := inner.SerializeMessage(comunicationMessage)
-	if err != nil {
-		slog.Debug("While serializing comunication message", "err", err)
-		return err
-	}
-
-	if err := aggregation.aggrExchange.Send(*message); err != nil {
-		slog.Debug("While sending comunication message", "err", err)
-		return err
-	}
-
 	return nil
 }
 
